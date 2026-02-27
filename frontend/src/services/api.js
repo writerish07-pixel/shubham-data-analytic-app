@@ -45,3 +45,11 @@ export const getMarketAll    = ()  => api.get('/api/market/all').then(r => r.dat
 export const getMarketTrends = ()  => api.get('/api/market/trends').then(r => r.data)
 export const getCompetitorNews = () => api.get('/api/market/competitor-news').then(r => r.data)
 export const getEvTrends     = ()  => api.get('/api/market/ev-trends').then(r => r.data)
+
+// ─── Data Upload ──────────────────────────────────────────────────────────────
+export const uploadData      = (formData, onProgress) =>
+  api.post('/api/upload/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: onProgress,
+  }).then(r => r.data)
+export const getUploadStatus = () => api.get('/api/upload/status').then(r => r.data)
