@@ -1,1 +1,116 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Date, Boolean, JSON\nfrom sqlalchemy.sql import func\nfrom database import Base\nfrom datetime import datetime\n\nclass HeroSalesData(Base):\n    """Historical sales data model for Hero MotoCorp"""\n    __tablename__ = "hero_sales_data"\n    \n    id = Column(Integer, primary_key=True, index=True)\n    invoice_date = Column(Date, nullable=False, index=True)\n    sku_code = Column(String(50), nullable=False, index=True)\n    model_name = Column(String(100), nullable=False, index=True)\n    variant = Column(String(100), nullable=False)\n    colour = Column(String(50), nullable=False)\n    quantity_sold = Column(Integer, nullable=False)\n    unit_price = Column(Float, nullable=False)\n    total_value = Column(Float, nullable=False)\n    location = Column(String(100), nullable=True)\n    region = Column(String(50), nullable=True)\n    created_at = Column(DateTime, server_default=func.now())\n    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())\n    \nclass ForecastData(Base):\n    """Forecast predictions model"""\n    __tablename__ = "forecast_data"\n    \n    id = Column(Integer, primary_key=True, index=True)\n    forecast_date = Column(Date, nullable=False, index=True)\n    sku_code = Column(String(50), nullable=False, index=True)\n    model_name = Column(String(100), nullable=False)\n    variant = Column(String(100), nullable=False)\n    colour = Column(String(50), nullable=False)\n    predicted_quantity = Column(Float, nullable=False)\n    confidence_lower = Column(Float, nullable=False)\n    confidence_upper = Column(Float, nullable=False)\n    forecast_method = Column(String(20), default="prophet")  # prophet, xgboost, lstm\n    created_at = Column(DateTime, server_default=func.now())\n    \nclass DispatchRecommendation(Base):\n    """Dispatch planning recommendations"""\n    __tablename__ = "dispatch_recommendations"\n    \n    id = Column(Integer, primary_key=True, index=True)\n    recommendation_date = Column(Date, nullable=False, index=True)\n    sku_code = Column(String(50), nullable=False, index=True)\n    model_name = Column(String(100), nullable=False)\n    variant = Column(String(100), nullable=False)\n    colour = Column(String(50), nullable=False)\n    recommended_quantity = Column(Integer, nullable=False)\n    buffer_stock = Column(Integer, nullable=False)\n    risk_score = Column(Float, nullable=False)  # 0-1: risk of overstock/understock\n    risk_type = Column(String(20), default="neutral")  # overstock, understock, neutral\n    working_capital_impact = Column(Float, nullable=False)\n    notes = Column(String(500), nullable=True)\n    created_at = Column(DateTime, server_default=func.now())\n\nclass SKUPerformance(Base):\n    """SKU-wise performance metrics"""\n    __tablename__ = "sku_performance"\n    \n    id = Column(Integer, primary_key=True, index=True)\n    sku_code = Column(String(50), nullable=False, unique=True, index=True)\n    model_name = Column(String(100), nullable=False)\n    variant = Column(String(100), nullable=False)\n    colour = Column(String(50), nullable=False)\n    total_units_sold = Column(Integer, default=0)\n    total_revenue = Column(Float, default=0)\n    yoy_growth_percent = Column(Float, nullable=True)\n    mom_growth_percent = Column(Float, nullable=True)\n    last_month_sales = Column(Integer, default=0)\n    current_month_sales = Column(Integer, default=0)\n    seasonality_factor = Column(Float, default=1.0)\n    is_slow_moving = Column(Boolean, default=False)\n    created_at = Column(DateTime, server_default=func.now())\n    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())\n\nclass DashboardMetrics(Base):\n    """Summary metrics for dashboard"""\n    __tablename__ = "dashboard_metrics"\n    \n    id = Column(Integer, primary_key=True, index=True)\n    metric_date = Column(Date, nullable=False, unique=True, index=True)\n    total_sales_units = Column(Integer, default=0)\n    total_sales_revenue = Column(Float, default=0)\n    unique_skus = Column(Integer, default=0)\n    avg_daily_sales = Column(Float, default=0)\n    top_sku = Column(String(50), nullable=True)\n    top_variant = Column(String(100), nullable=True)\n    top_colour = Column(String(50), nullable=True)\n    forecast_accuracy = Column(Float, nullable=True)\n    created_at = Column(DateTime, server_default=func.now())
+from sqlalchemy import Column, Integer, String, Float, DateTime, Date, Boolean, Text, JSON
+from sqlalchemy.sql import func
+from database import Base
+
+
+class HeroSalesData(Base):
+    """Historical sales transaction records."""
+    __tablename__ = "hero_sales_data"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_date = Column(Date, nullable=False, index=True)
+    sku_code = Column(String(50), nullable=False, index=True)
+    model_name = Column(String(100), nullable=False, index=True)
+    variant = Column(String(100), nullable=False)
+    colour = Column(String(50), nullable=False)
+    quantity_sold = Column(Integer, nullable=False, default=1)
+    unit_price = Column(Float, nullable=False)
+    total_value = Column(Float, nullable=False)
+    location = Column(String(100), nullable=True)
+    region = Column(String(50), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ForecastData(Base):
+    """Forecast predictions per SKU per day."""
+    __tablename__ = "forecast_data"
+
+    id = Column(Integer, primary_key=True, index=True)
+    forecast_date = Column(Date, nullable=False, index=True)
+    sku_code = Column(String(50), nullable=False, index=True)
+    model_name = Column(String(100), nullable=False)
+    variant = Column(String(100), nullable=False)
+    colour = Column(String(50), nullable=False)
+    predicted_quantity = Column(Float, nullable=False)
+    confidence_lower = Column(Float, nullable=False)
+    confidence_upper = Column(Float, nullable=False)
+    festival_boost = Column(Float, default=1.0)
+    forecast_method = Column(String(30), default="seasonal_trend")
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class DispatchRecommendation(Base):
+    """Dispatch planning recommendations per SKU."""
+    __tablename__ = "dispatch_recommendations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recommendation_date = Column(Date, nullable=False, index=True)
+    sku_code = Column(String(50), nullable=False, index=True)
+    model_name = Column(String(100), nullable=False)
+    variant = Column(String(100), nullable=False)
+    colour = Column(String(50), nullable=False)
+    recommended_quantity = Column(Integer, nullable=False)
+    buffer_stock = Column(Integer, nullable=False)
+    total_dispatch = Column(Integer, nullable=False)
+    risk_score = Column(Float, nullable=False)  # 0–1
+    risk_type = Column(String(20), default="neutral")  # overstock | understock | neutral
+    working_capital_impact = Column(Float, nullable=False)
+    festival_factor = Column(Float, default=1.0)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class SKUPerformance(Base):
+    """Aggregated performance metrics per SKU (refreshed periodically)."""
+    __tablename__ = "sku_performance"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sku_code = Column(String(50), nullable=False, unique=True, index=True)
+    model_name = Column(String(100), nullable=False)
+    variant = Column(String(100), nullable=False)
+    colour = Column(String(50), nullable=False)
+    total_units_sold = Column(Integer, default=0)
+    total_revenue = Column(Float, default=0.0)
+    yoy_growth_percent = Column(Float, nullable=True)
+    mom_growth_percent = Column(Float, nullable=True)
+    last_month_units = Column(Integer, default=0)
+    current_month_units = Column(Integer, default=0)
+    avg_monthly_units = Column(Float, default=0.0)
+    seasonality_peak_month = Column(Integer, nullable=True)
+    is_slow_moving = Column(Boolean, default=False)
+    dead_stock_risk = Column(Float, default=0.0)  # 0–1
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class Alert(Base):
+    """Smart alerts generated by the analytics engine."""
+    __tablename__ = "alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    alert_type = Column(String(50), nullable=False, index=True)
+    priority = Column(String(10), default="medium")  # high | medium | low
+    title = Column(String(200), nullable=False)
+    message = Column(Text, nullable=False)
+    sku_code = Column(String(50), nullable=True)
+    related_festival = Column(String(100), nullable=True)
+    action_required = Column(Boolean, default=True)
+    is_dismissed = Column(Boolean, default=False)
+    expires_at = Column(Date, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class MarketIntelligence(Base):
+    """External market data snapshots."""
+    __tablename__ = "market_intelligence"
+
+    id = Column(Integer, primary_key=True, index=True)
+    data_date = Column(Date, nullable=False, index=True)
+    source = Column(String(50), nullable=False)
+    category = Column(String(50), nullable=False)  # trends | news | ev | fuel
+    title = Column(String(300), nullable=False)
+    summary = Column(Text, nullable=True)
+    impact_score = Column(Float, nullable=True)  # -1 to 1
+    raw_data = Column(JSON, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())

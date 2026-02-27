@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #1e293b; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* Card */
+.card {
+  @apply bg-brand-card border border-brand-border rounded-xl p-5;
+}
+
+/* KPI card */
+.kpi-card {
+  @apply card flex flex-col gap-1;
+}
+
+/* Recharts tooltips */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: #1e293b !important;
+  border: 1px solid #334155 !important;
+  border-radius: 8px !important;
+  color: #f1f5f9 !important;
+}
+
+/* Risk badges */
+.badge-understock {
+  @apply bg-red-900/40 text-red-400 border border-red-700/40 text-xs px-2 py-0.5 rounded-full;
+}
+.badge-overstock {
+  @apply bg-amber-900/40 text-amber-400 border border-amber-700/40 text-xs px-2 py-0.5 rounded-full;
+}
+.badge-neutral {
+  @apply bg-green-900/40 text-green-400 border border-green-700/40 text-xs px-2 py-0.5 rounded-full;
+}
+
+/* Chat bubbles */
+.bubble-user {
+  @apply bg-saffron-600 text-white rounded-2xl rounded-br-sm px-4 py-2 max-w-xs ml-auto;
+}
+.bubble-assistant {
+  @apply bg-brand-card border border-brand-border text-brand-text rounded-2xl rounded-bl-sm px-4 py-3 max-w-xl;
+}
+
+/* Sidebar nav item */
+.nav-item {
+  @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-brand-muted hover:bg-white/5 hover:text-brand-text transition-all cursor-pointer text-sm font-medium;
+}
+.nav-item.active {
+  @apply bg-saffron-500/15 text-saffron-400 border border-saffron-500/20;
+}
+
+/* Table */
+.data-table {
+  @apply w-full text-sm;
+}
+.data-table th {
+  @apply text-left text-brand-muted font-medium py-2 px-3 border-b border-brand-border text-xs uppercase tracking-wider;
+}
+.data-table td {
+  @apply py-3 px-3 border-b border-brand-border/50 text-brand-text;
+}
+.data-table tr:hover td {
+  @apply bg-white/[0.02];
+}

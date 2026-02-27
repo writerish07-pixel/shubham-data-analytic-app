@@ -1,29 +1,35 @@
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 from config import settings
 
-# Create database engine
+# Build engine with SQLite-specific args if needed
+connect_args = {}
+if "sqlite" in settings.database_url:
+    connect_args["check_same_thread"] = False
+
 engine = create_engine(
     settings.database_url,
+    connect_args=connect_args,
     echo=settings.sqlalchemy_echo,
-    pool_pre_ping=True
+    pool_pre_ping=True,
 )
 
-# Create session maker
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base class for models
 Base = declarative_base()
 
+
 def get_db():
-    """Dependency for getting database session"""
+    """FastAPI dependency: yields a database session."""
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
+
 def init_db():
-    """Initialize database tables"""
+    """Create all tables defined by SQLAlchemy models."""
+    # Import models so that Base.metadata knows about them
+    import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
