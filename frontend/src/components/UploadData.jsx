@@ -3,10 +3,19 @@ import { Upload, FileText, CheckCircle, XCircle, Download, AlertTriangle } from 
 import { uploadSalesData, getSalesUploadTemplateUrl } from '../services/api'
 
 const REQUIRED_COLS = [
-  'invoice_date', 'sku_code', 'model_name', 'variant',
-  'colour', 'quantity_sold', 'unit_price', 'total_value',
+  { name: 'invoice_date', aliases: 'date, sale_date' },
+  { name: 'sku_code',     aliases: 'sku' },
+  { name: 'model_name',   aliases: 'model' },
+  { name: 'variant',      aliases: '' },
+  { name: 'colour',       aliases: 'color' },
 ]
-const OPTIONAL_COLS = ['location', 'region']
+const OPTIONAL_COLS = [
+  { name: 'location',      note: '' },
+  { name: 'region',        note: '' },
+  { name: 'quantity_sold', note: 'defaults to 1 per row' },
+  { name: 'unit_price',    note: 'defaults to 0' },
+  { name: 'total_value',   note: 'auto-calculated if absent' },
+]
 
 export default function UploadData() {
   const [dragging, setDragging] = useState(false)
@@ -102,23 +111,33 @@ export default function UploadData() {
         <p className="text-sm font-semibold text-brand-text">Required Columns</p>
         <div className="flex flex-wrap gap-2">
           {REQUIRED_COLS.map(c => (
-            <span key={c} className="text-xs bg-green-500/10 border border-green-500/30 text-green-400 px-2.5 py-1 rounded-md font-mono">
-              {c}
-            </span>
+            <div key={c.name} className="flex flex-col items-start">
+              <span className="text-xs bg-green-500/10 border border-green-500/30 text-green-400 px-2.5 py-1 rounded-md font-mono">
+                {c.name}
+              </span>
+              {c.aliases && (
+                <span className="text-[10px] text-brand-muted mt-0.5 px-1">also: {c.aliases}</span>
+              )}
+            </div>
           ))}
         </div>
         <p className="text-sm font-semibold text-brand-text pt-1">Optional Columns</p>
         <div className="flex flex-wrap gap-2">
           {OPTIONAL_COLS.map(c => (
-            <span key={c} className="text-xs bg-blue-500/10 border border-blue-500/30 text-blue-400 px-2.5 py-1 rounded-md font-mono">
-              {c}
-            </span>
+            <div key={c.name} className="flex flex-col items-start">
+              <span className="text-xs bg-blue-500/10 border border-blue-500/30 text-blue-400 px-2.5 py-1 rounded-md font-mono">
+                {c.name}
+              </span>
+              {c.note && (
+                <span className="text-[10px] text-brand-muted mt-0.5 px-1">{c.note}</span>
+              )}
+            </div>
           ))}
         </div>
-        <p className="text-xs text-brand-muted">
+        <p className="text-xs text-brand-muted pt-1">
           <span className="font-medium text-brand-text">invoice_date</span> format: <span className="font-mono">YYYY-MM-DD</span>
           &nbsp;·&nbsp;
-          <span className="font-medium text-brand-text">total_value</span> = quantity_sold × unit_price
+          If <span className="font-mono">quantity_sold</span> is missing, each row counts as <span className="font-medium text-brand-text">1 unit sold</span>
         </p>
       </div>
 

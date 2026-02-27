@@ -16,8 +16,23 @@ from services.sales_analytics import (
 
 router = APIRouter()
 
-REQUIRED_COLUMNS = {"invoice_date", "sku_code", "model_name", "variant", "colour", "quantity_sold", "unit_price", "total_value"}
-OPTIONAL_COLUMNS = {"location", "region"}
+# Minimum columns the user must supply (after alias normalisation)
+REQUIRED_COLUMNS = {"invoice_date", "sku_code", "model_name", "variant", "colour"}
+
+# Accepted aliases: left = what user might write, right = canonical name
+COLUMN_ALIASES = {
+    "sku":        "sku_code",
+    "model":      "model_name",
+    "color":      "colour",
+    "date":       "invoice_date",
+    "sale_date":  "invoice_date",
+    "qty":        "quantity_sold",
+    "quantity":   "quantity_sold",
+    "units":      "quantity_sold",
+    "price":      "unit_price",
+    "amount":     "total_value",
+    "value":      "total_value",
+}
 
 
 @router.get("/dashboard")
@@ -72,14 +87,10 @@ def download_template():
     """Return a CSV template showing the required columns for data upload."""
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow([
-        "invoice_date", "sku_code", "model_name", "variant", "colour",
-        "quantity_sold", "unit_price", "total_value", "location", "region"
-    ])
-    writer.writerow([
-        "2024-01-15", "HER-SPL-STD-BLK", "Splendor Plus", "Standard", "Black",
-        "3", "72000", "216000", "Delhi", "North India"
-    ])
+    # Minimal template matching user's real file format
+    writer.writerow(["invoice_date", "sku_code", "model_name", "variant", "colour", "location", "region"])
+    writer.writerow(["2024-01-15", "HER-SPL-STD-BLK", "Splendor Plus", "Standard", "Black", "Delhi", "North India"])
+    writer.writerow(["2024-01-15", "HER-HFD-STD-RED", "HF Deluxe", "Standard", "Red", "Mumbai", "West India"])
     output.seek(0)
     return StreamingResponse(
         iter([output.getvalue()]),
@@ -93,11 +104,21 @@ def upload_sales_data(file: UploadFile = File(...), db: Session = Depends(get_db
     """
     Upload sales data from a CSV or Excel file.
 
-    Required columns: invoice_date, sku_code, model_name, variant, colour,
-                      quantity_sold, unit_price, total_value
-    Optional columns: location, region
+    Required columns (flexible naming accepted):
+      invoice_date / date / sale_date
+      sku_code / sku
+      model_name / model
+      variant
+      colour / color
 
-    invoice_date format: YYYY-MM-DD
+    Optional columns:
+      quantity_sold / qty / quantity / units  → defaults to 1 per row
+      unit_price / price                      → defaults to 0
+      total_value / amount / value            → defaults to quantity × unit_price
+      location
+      region
+
+    invoice_date format: YYYY-MM-DD  (or any parseable date format)
     """
     filename = file.filename or ""
     content = file.file.read()
@@ -114,16 +135,20 @@ def upload_sales_data(file: UploadFile = File(...), db: Session = Depends(get_db
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not parse file: {e}")
 
+    # Normalise column names and apply aliases
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+    df.rename(columns=COLUMN_ALIASES, inplace=True)
 
     missing = REQUIRED_COLUMNS - set(df.columns)
     if missing:
         raise HTTPException(
             status_code=400,
             detail=f"Missing required columns: {', '.join(sorted(missing))}. "
-                   f"Download the template from GET /api/sales/upload/template"
+                   f"Accepted aliases — sku_code: 'sku', model_name: 'model', colour: 'color', "
+                   f"invoice_date: 'date'/'sale_date'. Download template for reference."
         )
 
+    cols = set(df.columns)
     rows_inserted = 0
     rows_skipped = 0
     errors = []
@@ -131,17 +156,30 @@ def upload_sales_data(file: UploadFile = File(...), db: Session = Depends(get_db
     for idx, row in df.iterrows():
         try:
             invoice_date = pd.to_datetime(row["invoice_date"]).date()
+
+            # quantity: default 1 per row if not supplied
+            qty = int(row["quantity_sold"]) if "quantity_sold" in cols and pd.notna(row.get("quantity_sold")) else 1
+
+            # price: default 0 if not supplied
+            price = float(row["unit_price"]) if "unit_price" in cols and pd.notna(row.get("unit_price")) else 0.0
+
+            # total_value: quantity × price if not explicitly supplied
+            if "total_value" in cols and pd.notna(row.get("total_value")):
+                total = float(row["total_value"])
+            else:
+                total = round(qty * price, 2)
+
             record = HeroSalesData(
                 invoice_date=invoice_date,
                 sku_code=str(row["sku_code"]).strip(),
                 model_name=str(row["model_name"]).strip(),
                 variant=str(row["variant"]).strip(),
                 colour=str(row["colour"]).strip(),
-                quantity_sold=int(row["quantity_sold"]),
-                unit_price=float(row["unit_price"]),
-                total_value=float(row["total_value"]),
-                location=str(row["location"]).strip() if "location" in df.columns and pd.notna(row.get("location")) else None,
-                region=str(row["region"]).strip() if "region" in df.columns and pd.notna(row.get("region")) else None,
+                quantity_sold=qty,
+                unit_price=price,
+                total_value=total,
+                location=str(row["location"]).strip() if "location" in cols and pd.notna(row.get("location")) else None,
+                region=str(row["region"]).strip() if "region" in cols and pd.notna(row.get("region")) else None,
             )
             db.add(record)
             rows_inserted += 1
@@ -160,5 +198,5 @@ def upload_sales_data(file: UploadFile = File(...), db: Session = Depends(get_db
         "filename": filename,
         "rows_inserted": rows_inserted,
         "rows_skipped": rows_skipped,
-        "errors": errors[:20],  # return at most 20 error details
+        "errors": errors[:20],
     }
