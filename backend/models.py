@@ -18,6 +18,8 @@ class HeroSalesData(Base):
     total_value = Column(Float, nullable=False)
     location = Column(String(100), nullable=True)
     region = Column(String(50), nullable=True)
+    source_type = Column(String(20), nullable=False, server_default="sample")  # sample | uploaded
+    uploaded_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
