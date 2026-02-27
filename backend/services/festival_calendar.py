@@ -89,6 +89,23 @@ FESTIVAL_CALENDAR: Dict[int, List[Dict]] = {
     ],
 }
 
+# Monthly seasonal demand factors for Indian two-wheeler market
+# Values > 1.0 indicate above-average demand months
+MONTHLY_SEASONAL_FACTORS: Dict[int, float] = {
+    1:  0.85,   # January  – post-festive lull, cold in North India
+    2:  0.90,   # February – gradually picking up, marriage season
+    3:  1.10,   # March    – financial year-end push, spring
+    4:  1.05,   # April    – new FY, spring buying
+    5:  0.95,   # May      – pre-monsoon, moderate demand
+    6:  0.80,   # June     – monsoon onset, slowdown
+    7:  0.75,   # July     – peak monsoon, lowest sales
+    8:  0.85,   # August   – monsoon easing, Onam preps in Kerala
+    9:  1.00,   # September– post-monsoon recovery, festive preps
+    10: 1.40,   # October  – Navratri / Dussehra / Dhanteras peak
+    11: 1.25,   # November – Diwali carry-over, marriage season begins
+    12: 1.10,   # December – marriage season, year-end deals
+}
+
 # Marriage seasons (recurring annually)
 MARRIAGE_SEASONS = [
     {"season": "Winter",  "months": [11, 12],   "uplift_pct": 25, "colours": ["Pearl White", "Sports Red", "Imperial Blue"], "types": ["scooter", "premium_bike"]},
