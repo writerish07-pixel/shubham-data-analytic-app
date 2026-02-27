@@ -45,3 +45,15 @@ export const getMarketAll    = ()  => api.get('/api/market/all').then(r => r.dat
 export const getMarketTrends = ()  => api.get('/api/market/trends').then(r => r.data)
 export const getCompetitorNews = () => api.get('/api/market/competitor-news').then(r => r.data)
 export const getEvTrends     = ()  => api.get('/api/market/ev-trends').then(r => r.data)
+
+// ─── Upload ───────────────────────────────────────────────────────────────────
+export const uploadSalesData = (file, onProgress) => {
+  const form = new FormData()
+  form.append('file', file)
+  return api.post('/api/sales/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: e => onProgress && onProgress(Math.round((e.loaded * 100) / e.total)),
+  }).then(r => r.data)
+}
+
+export const getSalesUploadTemplateUrl = () => `${BASE}/api/sales/upload/template`

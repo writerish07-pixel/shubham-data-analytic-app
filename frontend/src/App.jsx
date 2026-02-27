@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, TrendingUp, Truck, CalendarDays,
-  MessageSquare, Bell, Globe, Menu, X, Bike
+  MessageSquare, Bell, Globe, Menu, X, Bike, UploadCloud
 } from 'lucide-react'
 
 import Dashboard         from './components/Dashboard'
@@ -13,6 +13,7 @@ import FestivalCalendar  from './components/FestivalCalendar'
 import AICopilot         from './components/AICopilot'
 import Alerts            from './components/Alerts'
 import MarketIntelligence from './components/MarketIntelligence'
+import UploadData from './components/UploadData'
 import { getAlertCount } from './services/api'
 
 const NAV_ITEMS = [
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { path: '/alerts',     label: 'Smart Alerts',       icon: Bell },
   { path: '/market',     label: 'Market Intel',       icon: Globe },
   { path: '/copilot',    label: 'AI Copilot',         icon: MessageSquare },
+  { path: '/upload',    label: 'Upload Data',        icon: UploadCloud },
 ]
 
 function Sidebar({ open, onClose, alertCount }) {
@@ -146,6 +148,7 @@ export default function App() {
           <Route path="/alerts"    element={<Alerts />} />
           <Route path="/market"    element={<MarketIntelligence />} />
           <Route path="/copilot"   element={<AICopilot />} />
+          <Route path="/upload"    element={<UploadData />} />
         </Routes>
       </Layout>
     </BrowserRouter>
