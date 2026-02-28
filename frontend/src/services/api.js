@@ -47,13 +47,33 @@ export const getCompetitorNews = () => api.get('/api/market/competitor-news').th
 export const getEvTrends     = ()  => api.get('/api/market/ev-trends').then(r => r.data)
 
 // ─── Upload ───────────────────────────────────────────────────────────────────
-export const uploadSalesData = (file, onProgress) => {
+export const uploadSalesData = (file, onProgress, replaceExisting = true) => {
   const form = new FormData()
   form.append('file', file)
-  return api.post('/api/sales/upload', form, {
+  return api.post(`/api/sales/upload?replace_existing=${replaceExisting}`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: e => onProgress && onProgress(Math.round((e.loaded * 100) / e.total)),
   }).then(r => r.data)
 }
 
+export const clearSalesData = () => api.delete('/api/sales/clear').then(r => r.data)
 export const getSalesUploadTemplateUrl = () => `${BASE}/api/sales/upload/template`
+
+// ─── Stock Inventory ──────────────────────────────────────────────────────────
+export const uploadStockData = (file, onProgress, replaceExisting = true) => {
+  const form = new FormData()
+  form.append('file', file)
+  return api.post(`/api/stock/upload?replace_existing=${replaceExisting}`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: e => onProgress && onProgress(Math.round((e.loaded * 100) / e.total)),
+  }).then(r => r.data)
+}
+
+export const getStockInventory  = () => api.get('/api/stock/inventory').then(r => r.data)
+export const getStockSummary    = () => api.get('/api/stock/summary').then(r => r.data)
+export const clearStockData     = () => api.delete('/api/stock/clear').then(r => r.data)
+export const getStockTemplateUrl = () => `${BASE}/api/stock/template`
+
+// ─── Dispatch Export ──────────────────────────────────────────────────────────
+export const getDispatchExportUrl = (leadDays = 21) =>
+  `${BASE}/api/dispatch/export?lead_time_days=${leadDays}`

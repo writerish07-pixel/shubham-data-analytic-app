@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 import pandas as pd
 import numpy as np
 
-from models import HeroSalesData
+from models import HeroSalesData, StockInventory
 from services.forecasting import run_full_forecast, _sales_df
 from services.festival_calendar import get_upcoming_festivals
 
@@ -20,19 +20,25 @@ BUFFER_PCT = 0.15  # 15% buffer stock on top of forecast
 
 def _sku_current_stock(db: Session) -> Dict[str, int]:
     """
-    Simulate current stock levels based on recent sales velocity.
-    In production, this would be an actual stock lookup.
+    Return current stock levels from StockInventory table (uploaded by user).
+    Falls back to simulated values if no inventory has been uploaded.
     """
+    inventory_items = db.query(StockInventory).all()
+    if inventory_items:
+        # Use real uploaded stock data – aggregate by sku_code
+        stock: Dict[str, int] = {}
+        for item in inventory_items:
+            stock[item.sku_code] = stock.get(item.sku_code, 0) + item.current_stock
+        return stock
+
+    # Fallback: estimate stock as 30-day sales * 1.2
     df = _sales_df(db)
     if df.empty:
         return {}
-
-    # Simulate current stock as 30-day avg * 1.2 (reasonable assumption)
     today = pd.Timestamp.today()
     recent = df[df["invoice_date"] >= today - pd.Timedelta(days=30)]
     monthly_velocity = recent.groupby("sku_code")["quantity_sold"].sum()
-    stock = {sku: max(2, int(units * 1.2)) for sku, units in monthly_velocity.items()}
-    return stock
+    return {sku: max(2, int(units * 1.2)) for sku, units in monthly_velocity.items()}
 
 
 def _risk_score(
@@ -132,11 +138,15 @@ def generate_dispatch_recommendations(
         if risk_type == "overstock":
             notes_parts.append("📦 Current stock may be sufficient – consider reducing dispatch")
 
+        stock_source = "uploaded" if db.query(StockInventory).first() else "estimated"
         recommendations.append({
             "sku_code": sku,
             "model_name": model,
             "variant": variant,
             "colour": colour,
+            "current_stock": current_stock,
+            "stock_source": stock_source,
+            "forecast_units": round(forecast_units, 0),
             "recommended_quantity": required,
             "buffer_stock": buffer,
             "total_dispatch": required,

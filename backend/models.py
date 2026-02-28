@@ -101,6 +101,22 @@ class Alert(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class StockInventory(Base):
+    """Current stock on hand – uploaded by the user."""
+    __tablename__ = "stock_inventory"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sku_code = Column(String(50), nullable=False, index=True)
+    model_name = Column(String(100), nullable=False)
+    variant = Column(String(100), nullable=True)
+    colour = Column(String(50), nullable=True)
+    current_stock = Column(Integer, nullable=False, default=0)
+    location = Column(String(100), nullable=True)
+    region = Column(String(50), nullable=True)
+    uploaded_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class MarketIntelligence(Base):
     """External market data snapshots."""
     __tablename__ = "market_intelligence"

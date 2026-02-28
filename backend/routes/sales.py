@@ -21,17 +21,67 @@ REQUIRED_COLUMNS = {"invoice_date", "sku_code", "model_name", "variant", "colour
 
 # Accepted aliases: left = what user might write, right = canonical name
 COLUMN_ALIASES = {
-    "sku":        "sku_code",
-    "model":      "model_name",
-    "color":      "colour",
-    "date":       "invoice_date",
-    "sale_date":  "invoice_date",
-    "qty":        "quantity_sold",
-    "quantity":   "quantity_sold",
-    "units":      "quantity_sold",
-    "price":      "unit_price",
-    "amount":     "total_value",
-    "value":      "total_value",
+    # invoice date
+    "sku":              "sku_code",
+    "item_code":        "sku_code",
+    "product_code":     "sku_code",
+    "part_no":          "sku_code",
+    "part_number":      "sku_code",
+    # model name
+    "model":            "model_name",
+    "product_name":     "model_name",
+    "item_name":        "model_name",
+    "description":      "model_name",
+    "product":          "model_name",
+    "item":             "model_name",
+    # variant
+    "variant_name":     "variant",
+    "type":             "variant",
+    "grade":            "variant",
+    # colour
+    "color":            "colour",
+    "shade":            "colour",
+    "color_name":       "colour",
+    "colour_name":      "colour",
+    # invoice date
+    "date":             "invoice_date",
+    "sale_date":        "invoice_date",
+    "inv_date":         "invoice_date",
+    "invoice date":     "invoice_date",
+    "bill_date":        "invoice_date",
+    "sales_date":       "invoice_date",
+    "transaction_date": "invoice_date",
+    "txn_date":         "invoice_date",
+    # quantity
+    "qty":              "quantity_sold",
+    "quantity":         "quantity_sold",
+    "units":            "quantity_sold",
+    "sold_qty":         "quantity_sold",
+    "no_of_units":      "quantity_sold",
+    "nos":              "quantity_sold",
+    "pcs":              "quantity_sold",
+    # price
+    "price":            "unit_price",
+    "rate":             "unit_price",
+    "mrp":              "unit_price",
+    "ex_showroom":      "unit_price",
+    "selling_price":    "unit_price",
+    # total value
+    "amount":           "total_value",
+    "value":            "total_value",
+    "net_amount":       "total_value",
+    "total":            "total_value",
+    "total_amount":     "total_value",
+    "invoice_amount":   "total_value",
+    "bill_amount":      "total_value",
+    # location / region
+    "city":             "location",
+    "dealer":           "location",
+    "dealer_city":      "location",
+    "zone":             "region",
+    "area":             "region",
+    "state":            "region",
+    "territory":        "region",
 }
 
 
@@ -99,26 +149,40 @@ def download_template():
     )
 
 
+@router.delete("/clear")
+def clear_sales_data(db: Session = Depends(get_db)):
+    """Delete all existing sales records (resets the database for fresh upload)."""
+    count = db.query(HeroSalesData).count()
+    db.query(HeroSalesData).delete()
+    db.commit()
+    return {"status": "cleared", "rows_deleted": count}
+
+
 @router.post("/upload")
-def upload_sales_data(file: UploadFile = File(...), db: Session = Depends(get_db)):
+def upload_sales_data(
+    file: UploadFile = File(...),
+    replace_existing: bool = True,
+    db: Session = Depends(get_db),
+):
     """
     Upload sales data from a CSV or Excel file.
 
+    replace_existing=True (default): clears all previous records before inserting.
+    replace_existing=False: appends to existing data.
+
     Required columns (flexible naming accepted):
-      invoice_date / date / sale_date
-      sku_code / sku
-      model_name / model
-      variant
-      colour / color
+      invoice_date / date / sale_date / inv_date / bill_date
+      sku_code / sku / item_code / product_code
+      model_name / model / product_name / item_name / description
+      variant / variant_name / type
+      colour / color / shade
 
     Optional columns:
-      quantity_sold / qty / quantity / units  → defaults to 1 per row
-      unit_price / price                      → defaults to 0
-      total_value / amount / value            → defaults to quantity × unit_price
-      location
-      region
-
-    invoice_date format: YYYY-MM-DD  (or any parseable date format)
+      quantity_sold / qty / quantity / units / sold_qty  → defaults to 1 per row
+      unit_price / price / rate / mrp                   → defaults to 0
+      total_value / amount / value / net_amount / total → defaults to quantity × unit_price
+      location / city / dealer / dealer_city
+      region / zone / area / state
     """
     filename = file.filename or ""
     content = file.file.read()
@@ -135,9 +199,28 @@ def upload_sales_data(file: UploadFile = File(...), db: Session = Depends(get_db
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not parse file: {e}")
 
+    # If replacing, clear existing data first
+    if replace_existing:
+        db.query(HeroSalesData).delete()
+        db.commit()
+
     # Normalise column names and apply aliases
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
     df.rename(columns=COLUMN_ALIASES, inplace=True)
+
+    # Auto-detect model_name from sku_code if model_name column is missing
+    if "model_name" not in df.columns and "sku_code" in df.columns:
+        df["model_name"] = df["sku_code"].astype(str).apply(
+            lambda s: s.split("-")[1] if "-" in s and len(s.split("-")) > 1 else s
+        )
+
+    # Auto-fill variant if missing
+    if "variant" not in df.columns:
+        df["variant"] = "Standard"
+
+    # Auto-fill colour if missing
+    if "colour" not in df.columns:
+        df["colour"] = "Default"
 
     missing = REQUIRED_COLUMNS - set(df.columns)
     if missing:
@@ -198,5 +281,6 @@ def upload_sales_data(file: UploadFile = File(...), db: Session = Depends(get_db
         "filename": filename,
         "rows_inserted": rows_inserted,
         "rows_skipped": rows_skipped,
+        "replaced_existing": replace_existing,
         "errors": errors[:20],
     }

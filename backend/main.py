@@ -61,6 +61,7 @@ from routes.festivals import router as festivals_router
 from routes.alerts import router as alerts_router
 from routes.copilot import router as copilot_router
 from routes.market import router as market_router
+from routes.stock import router as stock_router
 
 app.include_router(sales_router,    prefix="/api/sales",     tags=["Sales Analytics"])
 app.include_router(forecast_router, prefix="/api/forecast",  tags=["Forecasting"])
@@ -69,6 +70,7 @@ app.include_router(festivals_router,prefix="/api/festivals", tags=["Festival Int
 app.include_router(alerts_router,   prefix="/api/alerts",    tags=["Smart Alerts"])
 app.include_router(copilot_router,  prefix="/api/copilot",   tags=["AI Copilot"])
 app.include_router(market_router,   prefix="/api/market",    tags=["Market Intelligence"])
+app.include_router(stock_router,    prefix="/api/stock",     tags=["Stock Inventory"])
 
 
 # ─── Health ─────────────────────────────────────────────────────────────────────
