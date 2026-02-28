@@ -6,7 +6,7 @@ from database import get_db
 from services.festival_calendar import (
     get_upcoming_festivals, get_festival_impact_history,
     get_marriage_season_info, get_all_festivals_flat,
-    is_marriage_season,
+    is_marriage_season, get_upcoming_marriage_muhurats,
 )
 from datetime import date
 
@@ -51,3 +51,12 @@ def marriage_season():
         "current_season": season_data,
         "next_season": info,
     }
+
+
+@router.get("/marriage-muhurats")
+def marriage_muhurats(
+    days_ahead: int = Query(90, ge=7, le=365),
+):
+    """Return upcoming auspicious marriage muhurtat dates with demand impact estimates."""
+    muhurats = get_upcoming_marriage_muhurats(days_ahead=days_ahead)
+    return muhurats

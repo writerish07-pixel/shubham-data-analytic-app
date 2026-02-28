@@ -1,6 +1,11 @@
 """
 Sales Analytics Service
-Computes YoY, MoM, SKU performance, colour analysis, and seasonal patterns.
+Computes YoY, MoM, SKU performance, colour analysis, seasonal patterns,
+and location-based analytics.
+
+KEY FIX: All year-based comparisons use the latest year present in the
+uploaded data, NOT today's year. This ensures correct results regardless
+of when the app is run vs. when the data was recorded.
 """
 from datetime import date, timedelta
 from typing import List, Dict, Optional, Any
@@ -45,6 +50,7 @@ def _sales_to_df(records: List[HeroSalesData]) -> pd.DataFrame:
         "quantity_sold": r.quantity_sold,
         "unit_price": r.unit_price,
         "total_value": r.total_value,
+        "location": r.location,
         "region": r.region,
     } for r in records]
     df = pd.DataFrame(rows)
@@ -54,8 +60,61 @@ def _sales_to_df(records: List[HeroSalesData]) -> pd.DataFrame:
     return df
 
 
+def _get_latest_year(df: pd.DataFrame) -> int:
+    """
+    Returns the latest (most recent) year present in the data.
+    This is used as the 'current year' for all comparisons so that
+    analytics work correctly regardless of today's actual calendar year.
+    """
+    if df.empty:
+        return date.today().year
+    return int(df["year"].max())
+
+
+def _get_latest_date_in_data(df: pd.DataFrame) -> date:
+    """Returns the most recent invoice date in the dataset."""
+    if df.empty:
+        return date.today()
+    return df["invoice_date"].max().date()
+
+
+def get_data_info(db: Session) -> Dict[str, Any]:
+    """Return metadata about what data is currently loaded in the database."""
+    records = db.query(HeroSalesData).all()
+    df = _sales_to_df(records)
+    if df.empty:
+        return {
+            "has_data": False,
+            "total_records": 0,
+            "date_range_start": None,
+            "date_range_end": None,
+            "years_available": [],
+            "total_units": 0,
+            "total_revenue": 0,
+            "sku_count": 0,
+            "location_count": 0,
+        }
+
+    years = sorted(df["year"].unique().tolist())
+    locations = df["location"].dropna().unique().tolist()
+
+    return {
+        "has_data": True,
+        "total_records": len(records),
+        "date_range_start": str(df["invoice_date"].min().date()),
+        "date_range_end": str(df["invoice_date"].max().date()),
+        "years_available": [int(y) for y in years],
+        "total_units": int(df["quantity_sold"].sum()),
+        "total_revenue": round(float(df["total_value"].sum()), 2),
+        "sku_count": int(df["sku_code"].nunique()),
+        "model_count": int(df["model_name"].nunique()),
+        "location_count": len(locations),
+        "top_location": df.groupby("location")["quantity_sold"].sum().idxmax() if not df["location"].isna().all() else None,
+    }
+
+
 def get_yoy_analysis(db: Session) -> List[Dict]:
-    """YoY monthly comparison for the last 4 years."""
+    """YoY monthly comparison for all years present in the data."""
     records = db.query(HeroSalesData).all()
     df = _sales_to_df(records)
     if df.empty:
@@ -66,7 +125,6 @@ def get_yoy_analysis(db: Session) -> List[Dict]:
         revenue=("total_value", "sum"),
     ).reset_index()
 
-    years = sorted(monthly["year"].unique())
     result = []
 
     for _, row in monthly.iterrows():
@@ -120,19 +178,26 @@ def get_mom_analysis(db: Session, recent_months: int = 24) -> List[Dict]:
 
 
 def get_sku_performance(db: Session) -> List[Dict]:
-    """Return performance metrics for each SKU."""
+    """Return performance metrics for each SKU, using data's latest year as reference."""
     records = db.query(HeroSalesData).all()
     df = _sales_to_df(records)
     if df.empty:
         return []
 
-    today = date.today()
-    current_month_start = date(today.year, today.month, 1)
-    last_month_start = date(today.year, today.month - 1, 1) if today.month > 1 else date(today.year - 1, 12, 1)
+    # Use the latest year IN THE DATA as the reference year (not today's year)
+    latest_year = _get_latest_year(df)
+    latest_date = _get_latest_date_in_data(df)
+
+    current_month_start = date(latest_year, latest_date.month, 1)
+    if latest_date.month > 1:
+        last_month_start = date(latest_year, latest_date.month - 1, 1)
+    else:
+        last_month_start = date(latest_year - 1, 12, 1)
     last_month_end = current_month_start - timedelta(days=1)
-    last_year_start = date(today.year - 1, 1, 1)
-    last_year_end = date(today.year - 1, 12, 31)
-    this_year_start = date(today.year, 1, 1)
+
+    last_year_start = date(latest_year - 1, 1, 1)
+    last_year_end = date(latest_year - 1, 12, 31)
+    this_year_start = date(latest_year, 1, 1)
 
     agg = df.groupby(["sku_code", "model_name", "variant", "colour"]).agg(
         total_units=("quantity_sold", "sum"),
@@ -180,6 +245,7 @@ def get_sku_performance(db: Session) -> List[Dict]:
             "avg_monthly_units": round(monthly_avg, 1),
             "is_slow_moving": is_slow,
             "dead_stock_risk": dead_risk,
+            "ref_year": latest_year,
         })
 
     return sorted(result, key=lambda x: x["total_units_sold"], reverse=True)
@@ -198,11 +264,11 @@ def get_colour_analysis(db: Session) -> List[Dict]:
         revenue=("total_value", "sum"),
     ).reset_index()
 
-    # YoY per colour
-    today = date.today()
-    ly_start = date(today.year - 1, 1, 1)
-    ly_end = date(today.year - 1, 12, 31)
-    ty_start = date(today.year, 1, 1)
+    # YoY per colour — use data's latest year as reference
+    latest_year = _get_latest_year(df)
+    ly_start = date(latest_year - 1, 1, 1)
+    ly_end = date(latest_year - 1, 12, 31)
+    ty_start = date(latest_year, 1, 1)
 
     result = []
     for _, row in agg.iterrows():
@@ -226,7 +292,7 @@ def get_colour_analysis(db: Session) -> List[Dict]:
 
 
 def get_seasonal_patterns(db: Session) -> List[Dict]:
-    """Monthly average sales and seasonal factors."""
+    """Monthly average sales and seasonal factors derived from actual data."""
     records = db.query(HeroSalesData).all()
     df = _sales_to_df(records)
     if df.empty:
@@ -251,18 +317,101 @@ def get_seasonal_patterns(db: Session) -> List[Dict]:
     return sorted(result, key=lambda x: x["month"])
 
 
+def get_location_analysis(db: Session) -> List[Dict]:
+    """
+    Sales breakdown by location (city/dealer) and region (state/zone).
+    Returns city-wise units, revenue, top model, YoY trend.
+    """
+    records = db.query(HeroSalesData).all()
+    df = _sales_to_df(records)
+    if df.empty:
+        return []
+
+    latest_year = _get_latest_year(df)
+    ly_start = date(latest_year - 1, 1, 1)
+    ly_end = date(latest_year - 1, 12, 31)
+    ty_start = date(latest_year, 1, 1)
+
+    # Use location if available, fall back to region
+    has_location = not df["location"].isna().all()
+    group_col = "location" if has_location else "region"
+
+    loc_df = df.dropna(subset=[group_col])
+    if loc_df.empty:
+        return []
+
+    agg = loc_df.groupby(group_col).agg(
+        total_units=("quantity_sold", "sum"),
+        total_revenue=("total_value", "sum"),
+    ).reset_index()
+
+    total = agg["total_units"].sum()
+    result = []
+
+    for _, row in agg.iterrows():
+        loc = row[group_col]
+        loc_data = loc_df[loc_df[group_col] == loc]
+
+        # Top selling model at this location
+        top_model = loc_data.groupby("model_name")["quantity_sold"].sum().idxmax() \
+            if not loc_data.empty else "—"
+
+        # YoY for this location
+        ty = int(loc_data[loc_data["invoice_date"].dt.date >= ty_start]["quantity_sold"].sum())
+        ly = int(loc_data[
+            (loc_data["invoice_date"].dt.date >= ly_start) &
+            (loc_data["invoice_date"].dt.date <= ly_end)
+        ]["quantity_sold"].sum())
+        yoy = round((ty - ly) / ly * 100, 1) if ly > 0 else None
+
+        # Region label
+        region_vals = loc_data["region"].dropna().unique()
+        region = region_vals[0] if len(region_vals) > 0 else loc
+
+        result.append({
+            "location": loc,
+            "region": region,
+            "total_units": int(row["total_units"]),
+            "total_revenue": round(float(row["total_revenue"]), 2),
+            "share_pct": round(float(row["total_units"]) / total * 100, 1),
+            "yoy_growth": yoy,
+            "top_model": top_model,
+            "this_year_units": ty,
+            "last_year_units": ly,
+        })
+
+    return sorted(result, key=lambda x: x["total_units"], reverse=True)
+
+
 def get_dashboard_summary(db: Session) -> Dict[str, Any]:
-    """Aggregated KPIs for the main dashboard."""
+    """
+    Aggregated KPIs for the main dashboard.
+    Uses data's latest year as the reference year for YTD calculations.
+    """
     records = db.query(HeroSalesData).all()
     df = _sales_to_df(records)
     if df.empty:
         return {}
 
-    today = date.today()
-    ytd_df = df[df["invoice_date"].dt.date >= date(today.year, 1, 1)]
+    # Use max year in data as "current year" reference
+    latest_year = _get_latest_year(df)
+    latest_date = _get_latest_date_in_data(df)
+
+    # YTD = from latest_year Jan 1 to the latest data date
+    ytd_start = date(latest_year, 1, 1)
+    ytd_end = latest_date
+
+    # Last year same period (Jan 1 to same month/day of previous year)
+    ly_ytd_start = date(latest_year - 1, 1, 1)
+    ly_ytd_end = date(latest_year - 1, latest_date.month, latest_date.day)
+
+    ytd_df = df[
+        (df["invoice_date"].dt.date >= ytd_start) &
+        (df["invoice_date"].dt.date <= ytd_end)
+    ]
     ly_ytd_df = df[
-        (df["invoice_date"].dt.date >= date(today.year - 1, 1, 1)) &
-        (df["invoice_date"].dt.date < date(today.year, today.month, today.day))
+        (df["invoice_date"].dt.date >= ly_ytd_start) &
+        (df["invoice_date"].dt.date <= ly_ytd_end)
     ]
 
     ytd_units = int(ytd_df["quantity_sold"].sum())
@@ -288,4 +437,8 @@ def get_dashboard_summary(db: Session) -> Dict[str, Any]:
         "forecast_accuracy_pct": 87.4,  # illustrative
         "monthly_trend": monthly_trend,
         "sku_rankings": sku_rankings,
+        # Metadata for UI display
+        "ref_year": latest_year,
+        "data_range_start": str(df["invoice_date"].min().date()),
+        "data_range_end": str(latest_date),
     }

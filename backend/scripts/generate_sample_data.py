@@ -1,7 +1,8 @@
 """
 Sample Data Generator
-Generates 4 years (2021–2024) of realistic Indian two-wheeler sales data
+Generates 3 years (2023–2025) of realistic Indian two-wheeler sales data
 with festive/marriage seasonality, YoY growth, and SKU mix.
+Data range matches typical dealer billing data from 2023 onward.
 """
 import random
 import logging
@@ -12,21 +13,21 @@ logger = logging.getLogger(__name__)
 
 # ─── SKU Master ─────────────────────────────────────────────────────────────────
 HERO_SKUS = [
-    {"sku_code": "HER-SPL-STD-BLK", "model_name": "Splendor Plus",    "variant": "Standard",  "colour": "Black",         "price": 72000,  "base_daily": 4.5, "region": "North India"},
-    {"sku_code": "HER-SPL-STD-RED", "model_name": "Splendor Plus",    "variant": "Standard",  "colour": "Sports Red",    "price": 72000,  "base_daily": 3.8, "region": "North India"},
-    {"sku_code": "HER-SPL-DLX-SIL", "model_name": "Splendor Plus",    "variant": "Deluxe",    "colour": "Pearl Silver",  "price": 76000,  "base_daily": 3.2, "region": "North India"},
-    {"sku_code": "HER-HFD-STD-BLK", "model_name": "HF Deluxe",        "variant": "Standard",  "colour": "Black",         "price": 64000,  "base_daily": 5.0, "region": "All India"},
-    {"sku_code": "HER-HFD-STD-RED", "model_name": "HF Deluxe",        "variant": "Standard",  "colour": "Red",           "price": 64000,  "base_daily": 4.0, "region": "All India"},
-    {"sku_code": "HER-PAS-STD-BLK", "model_name": "Passion Pro",      "variant": "Standard",  "colour": "Black",         "price": 79000,  "base_daily": 3.5, "region": "All India"},
-    {"sku_code": "HER-PAS-DLX-RED", "model_name": "Passion Pro",      "variant": "Deluxe",    "colour": "Red",           "price": 82000,  "base_daily": 2.5, "region": "All India"},
-    {"sku_code": "HER-XTR-STD-RED", "model_name": "Xtreme 160R",      "variant": "Standard",  "colour": "Blazing Red",   "price": 115000, "base_daily": 2.0, "region": "Urban"},
-    {"sku_code": "HER-XTR-STD-BLK", "model_name": "Xtreme 160R",      "variant": "Standard",  "colour": "Black",         "price": 115000, "base_daily": 1.8, "region": "Urban"},
-    {"sku_code": "HER-DST-STD-WHT", "model_name": "Destini 125",      "variant": "Standard",  "colour": "Pearl White",   "price": 78000,  "base_daily": 2.8, "region": "All India"},
-    {"sku_code": "HER-DST-STD-RED", "model_name": "Destini 125",      "variant": "Standard",  "colour": "Imperial Red",  "price": 78000,  "base_daily": 2.5, "region": "All India"},
-    {"sku_code": "HER-MAE-STD-SIL", "model_name": "Maestro Edge 125", "variant": "Standard",  "colour": "Silver",        "price": 82000,  "base_daily": 2.0, "region": "South India"},
-    {"sku_code": "HER-GLM-STD-BLU", "model_name": "Glamour",          "variant": "Standard",  "colour": "Force Blue",    "price": 85000,  "base_daily": 1.5, "region": "All India"},
-    {"sku_code": "HER-XPL-STD-BLK", "model_name": "Xpulse 200",       "variant": "Standard",  "colour": "Sports Red",    "price": 140000, "base_daily": 0.8, "region": "Urban"},
-    {"sku_code": "HER-SUP-STD-BLK", "model_name": "Super Splendor",   "variant": "Standard",  "colour": "Black",         "price": 82000,  "base_daily": 2.2, "region": "All India"},
+    {"sku_code": "HER-SPL-STD-BLK", "model_name": "Splendor Plus",    "variant": "Standard",  "colour": "Black",         "price": 72000,  "base_daily": 4.5, "region": "North India",  "location": "Delhi"},
+    {"sku_code": "HER-SPL-STD-RED", "model_name": "Splendor Plus",    "variant": "Standard",  "colour": "Sports Red",    "price": 72000,  "base_daily": 3.8, "region": "North India",  "location": "Jaipur"},
+    {"sku_code": "HER-SPL-DLX-SIL", "model_name": "Splendor Plus",    "variant": "Deluxe",    "colour": "Pearl Silver",  "price": 76000,  "base_daily": 3.2, "region": "North India",  "location": "Lucknow"},
+    {"sku_code": "HER-HFD-STD-BLK", "model_name": "HF Deluxe",        "variant": "Standard",  "colour": "Black",         "price": 64000,  "base_daily": 5.0, "region": "All India",    "location": "Pan India"},
+    {"sku_code": "HER-HFD-STD-RED", "model_name": "HF Deluxe",        "variant": "Standard",  "colour": "Red",           "price": 64000,  "base_daily": 4.0, "region": "All India",    "location": "Pan India"},
+    {"sku_code": "HER-PAS-STD-BLK", "model_name": "Passion Pro",      "variant": "Standard",  "colour": "Black",         "price": 79000,  "base_daily": 3.5, "region": "All India",    "location": "Pan India"},
+    {"sku_code": "HER-PAS-DLX-RED", "model_name": "Passion Pro",      "variant": "Deluxe",    "colour": "Red",           "price": 82000,  "base_daily": 2.5, "region": "All India",    "location": "Mumbai"},
+    {"sku_code": "HER-XTR-STD-RED", "model_name": "Xtreme 160R",      "variant": "Standard",  "colour": "Blazing Red",   "price": 115000, "base_daily": 2.0, "region": "Urban",        "location": "Bangalore"},
+    {"sku_code": "HER-XTR-STD-BLK", "model_name": "Xtreme 160R",      "variant": "Standard",  "colour": "Black",         "price": 115000, "base_daily": 1.8, "region": "Urban",        "location": "Hyderabad"},
+    {"sku_code": "HER-DST-STD-WHT", "model_name": "Destini 125",      "variant": "Standard",  "colour": "Pearl White",   "price": 78000,  "base_daily": 2.8, "region": "All India",    "location": "Pan India"},
+    {"sku_code": "HER-DST-STD-RED", "model_name": "Destini 125",      "variant": "Standard",  "colour": "Imperial Red",  "price": 78000,  "base_daily": 2.5, "region": "All India",    "location": "Chennai"},
+    {"sku_code": "HER-MAE-STD-SIL", "model_name": "Maestro Edge 125", "variant": "Standard",  "colour": "Silver",        "price": 82000,  "base_daily": 2.0, "region": "South India",  "location": "Chennai"},
+    {"sku_code": "HER-GLM-STD-BLU", "model_name": "Glamour",          "variant": "Standard",  "colour": "Force Blue",    "price": 85000,  "base_daily": 1.5, "region": "All India",    "location": "Pune"},
+    {"sku_code": "HER-XPL-STD-BLK", "model_name": "Xpulse 200",       "variant": "Standard",  "colour": "Sports Red",    "price": 140000, "base_daily": 0.8, "region": "Urban",        "location": "Bangalore"},
+    {"sku_code": "HER-SUP-STD-BLK", "model_name": "Super Splendor",   "variant": "Standard",  "colour": "Black",         "price": 82000,  "base_daily": 2.2, "region": "All India",    "location": "Pan India"},
 ]
 
 # Monthly seasonal multipliers (Indian two-wheeler market)
@@ -38,14 +39,13 @@ SEASONAL = {
 
 # Festival date windows: (month, start_day, end_day, boost_multiplier)
 FESTIVAL_WINDOWS = {
-    2021: [(1, 12, 16, 1.30), (10, 5, 16, 1.40), (11, 1, 7, 1.60)],
-    2022: [(1, 12, 16, 1.30), (9, 25, 30, 1.20), (10, 1, 6, 1.40), (10, 22, 26, 1.60)],
     2023: [(1, 12, 16, 1.30), (4, 20, 24, 1.25), (10, 14, 25, 1.40), (11, 10, 15, 1.60)],
     2024: [(1, 13, 17, 1.30), (5, 8, 12, 1.25), (10, 2, 14, 1.40), (10, 28, 31, 1.50), (11, 1, 5, 1.60)],
+    2025: [(1, 14, 18, 1.30), (3, 28, 32, 1.20), (4, 28, 32, 1.25), (9, 22, 30, 1.35), (10, 1, 5, 1.45), (10, 18, 22, 1.60)],
 }
 
-# YoY growth factors
-YOY_GROWTH = {2021: 1.00, 2022: 1.08, 2023: 1.14, 2024: 1.22}
+# YoY growth factors (2023 as base)
+YOY_GROWTH = {2023: 1.00, 2024: 1.12, 2025: 1.22}
 
 
 def _is_festival_day(check_date: date) -> float:
@@ -82,10 +82,10 @@ def _generate_daily_qty(base_daily: float, invoice_date: date, yoy: float, noise
 
 
 def generate_sales_records() -> List[Dict]:
-    """Generate full 4-year sales dataset."""
+    """Generate 3-year (2023-2025) sales dataset matching real dealer data range."""
     records = []
-    start = date(2021, 1, 1)
-    end = date(2024, 12, 31)
+    start = date(2023, 1, 1)
+    end = date(2025, 12, 31)
 
     seed_counter = 0
     current = start
@@ -97,8 +97,8 @@ def generate_sales_records() -> List[Dict]:
             if qty == 0:
                 continue  # no sales this day for this SKU
 
-            # slight price drift YoY (~3% annual increase)
-            price_drift = 1.0 + 0.03 * (current.year - 2021)
+            # slight price drift YoY (~4% annual increase from 2023 base)
+            price_drift = 1.0 + 0.04 * (current.year - 2023)
             price = round(sku["price"] * price_drift, -2)  # round to nearest ₹100
 
             records.append({
@@ -110,9 +110,7 @@ def generate_sales_records() -> List[Dict]:
                 "quantity_sold": qty,
                 "unit_price": price,
                 "total_value": round(qty * price, 2),
-                "location": "Delhi" if "North" in sku["region"] else
-                            "Chennai" if "South" in sku["region"] else
-                            "Mumbai" if "Urban" in sku["region"] else "Pan India",
+                "location": sku["location"],
                 "region": sku["region"],
             })
         current += timedelta(days=1)
@@ -136,7 +134,7 @@ def seed_if_empty():
             logger.info(f"Database already has {count} records – skipping seed.")
             return
 
-        logger.info("Seeding database with sample sales data (this may take a moment)…")
+        logger.info("Seeding database with sample sales data (2023–2025)…")
         records = generate_sales_records()
 
         batch_size = 500

@@ -3,10 +3,11 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area
 } from 'recharts'
-import { getYoY, getMoM, getColourAnalysis, getSeasonalPatterns, getSkuPerf } from '../services/api'
+import { getYoY, getMoM, getColourAnalysis, getSeasonalPatterns, getSkuPerf, getDataInfo } from '../services/api'
+import { Info } from 'lucide-react'
 
 const COLORS = ['#f97316','#3b82f6','#10b981','#a78bfa','#f59e0b','#ec4899','#06b6d4','#84cc16']
-const YEARS = [2021, 2022, 2023, 2024]
+const YEAR_LINE_COLORS = ['#94a3b8','#3b82f6','#10b981','#f97316','#a78bfa','#ec4899']
 
 function Tab({ label, active, onClick }) {
   return (
@@ -29,20 +30,25 @@ export default function SalesAnalytics() {
   const [colours, setColours] = useState([])
   const [seasonal, setSeasonal] = useState([])
   const [skus, setSkus] = useState([])
+  const [dataInfo, setDataInfo] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([getYoY(), getMoM(24), getColourAnalysis(), getSeasonalPatterns(), getSkuPerf()])
-      .then(([yoy, mom, col, seas, sku]) => {
+    Promise.all([getYoY(), getMoM(24), getColourAnalysis(), getSeasonalPatterns(), getSkuPerf(), getDataInfo()])
+      .then(([yoy, mom, col, seas, sku, info]) => {
         setYoyData(yoy)
         setMomData(mom)
         setColours(col)
         setSeasonal(seas)
         setSkus(sku.slice(0, 15))
+        setDataInfo(info)
       })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
+
+  // Dynamically extract years from actual data — no hardcoding!
+  const YEARS = [...new Set(yoyData.map(d => d.year))].sort()
 
   // Reshape YoY data for multi-line chart
   const yoyPivot = (() => {
@@ -65,6 +71,18 @@ export default function SalesAnalytics() {
 
   return (
     <div className="space-y-6">
+      {/* Data info banner */}
+      {dataInfo?.has_data && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+          <Info size={14} className="shrink-0" />
+          <span>
+            Analysing <strong>{dataInfo.total_records?.toLocaleString('en-IN')}</strong> sales records
+            &nbsp;|&nbsp; {dataInfo.date_range_start} to {dataInfo.date_range_end}
+            &nbsp;|&nbsp; {dataInfo.sku_count} SKUs &nbsp;|&nbsp; Years: {YEARS.join(', ')}
+          </span>
+        </div>
+      )}
+
       {/* Tab bar */}
       <div className="flex gap-2 flex-wrap">
         {[['yoy','YoY Comparison'],['mom','MoM Trend'],['colour','Colour Analysis'],['seasonal','Seasonal Patterns'],['sku','SKU Table']].map(([k,l]) => (
@@ -76,19 +94,54 @@ export default function SalesAnalytics() {
       {tab === 'yoy' && (
         <div className="card">
           <h2 className="text-sm font-semibold text-brand-text mb-1">Year-on-Year Monthly Comparison</h2>
-          <p className="text-xs text-brand-muted mb-4">Units sold per month across 2021–2024</p>
-          <ResponsiveContainer width="100%" height={350}>
-            <LineChart data={yoyPivot}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 12 }} />
-              <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
-              <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#f1f5f9' }} />
-              <Legend wrapperStyle={{ color: '#94a3b8', fontSize: 12 }} />
-              {YEARS.map((y, i) => (
-                <Line key={y} type="monotone" dataKey={y} stroke={COLORS[i]} strokeWidth={2} dot={{ r: 3 }} name={String(y)} />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
+          <p className="text-xs text-brand-muted mb-4">
+            Units sold per month — {YEARS.length > 0 ? YEARS.join(', ') : 'No data loaded'}
+          </p>
+          {YEARS.length === 0 ? (
+            <div className="py-12 text-center text-brand-muted text-sm">
+              No sales data loaded. Please upload your sales file from Upload Data.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={350}>
+              <LineChart data={yoyPivot}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 12 }} />
+                <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
+                <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#f1f5f9' }} />
+                <Legend wrapperStyle={{ color: '#94a3b8', fontSize: 12 }} />
+                {YEARS.map((y, i) => (
+                  <Line
+                    key={y}
+                    type="monotone"
+                    dataKey={y}
+                    stroke={YEAR_LINE_COLORS[i % YEAR_LINE_COLORS.length]}
+                    strokeWidth={i === YEARS.length - 1 ? 3 : 2}
+                    dot={{ r: i === YEARS.length - 1 ? 4 : 3 }}
+                    name={String(y)}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+
+          {/* YoY Growth Summary Cards */}
+          {YEARS.length >= 2 && (() => {
+            const latestYear = YEARS[YEARS.length - 1]
+            const latestYearData = yoyData.filter(d => d.year === latestYear && d.growth_pct !== null)
+            return latestYearData.length > 0 ? (
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                {latestYearData.slice(0, 4).map((d, i) => (
+                  <div key={i} className="bg-white/[0.03] rounded-lg p-3 border border-brand-border/50">
+                    <p className="text-xs text-brand-muted">{d.month_name} {d.year}</p>
+                    <p className={`text-lg font-bold ${d.growth_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {d.growth_pct > 0 ? '+' : ''}{d.growth_pct}%
+                    </p>
+                    <p className="text-xs text-brand-muted">vs {d.year - 1}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null
+          })()}
         </div>
       )}
 
@@ -173,7 +226,7 @@ export default function SalesAnalytics() {
       {tab === 'seasonal' && (
         <div className="card">
           <h2 className="text-sm font-semibold text-brand-text mb-1">Seasonal Demand Patterns</h2>
-          <p className="text-xs text-brand-muted mb-4">Average monthly units with seasonal factor overlay</p>
+          <p className="text-xs text-brand-muted mb-4">Average monthly units derived from your actual sales data</p>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={seasonal}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -194,6 +247,7 @@ export default function SalesAnalytics() {
             <span>🎆 Festive month</span>
             <span className="text-amber-400">High demand: Oct–Nov–Dec, Mar</span>
             <span className="text-blue-400">Low demand: Jun–Jul (monsoon)</span>
+            <span className="text-green-400">Marriage months: Feb–May, Nov–Dec</span>
           </div>
         </div>
       )}
@@ -201,13 +255,18 @@ export default function SalesAnalytics() {
       {/* SKU Table */}
       {tab === 'sku' && (
         <div className="card">
-          <h2 className="text-sm font-semibold text-brand-text mb-4">SKU Performance Table</h2>
+          <h2 className="text-sm font-semibold text-brand-text mb-1">SKU Performance Table</h2>
+          {skus[0]?.ref_year && (
+            <p className="text-xs text-brand-muted mb-4">
+              YoY: {skus[0].ref_year} vs {skus[0].ref_year - 1} &nbsp;|&nbsp; MoM: latest vs previous month in data
+            </p>
+          )}
           <div className="overflow-x-auto">
             <table className="data-table">
               <thead>
                 <tr>
                   <th>#</th><th>SKU Code</th><th>Model</th><th>Colour</th>
-                  <th>Total Units</th><th>Revenue</th><th>YoY%</th><th>MoM%</th><th>Status</th>
+                  <th>Total Units</th><th>Revenue</th><th>YoY%</th><th>MoM%</th><th>Cur Month</th><th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -225,6 +284,7 @@ export default function SalesAnalytics() {
                     <td className={s.mom_growth_percent > 0 ? 'text-green-400' : s.mom_growth_percent < 0 ? 'text-red-400' : 'text-brand-muted'}>
                       {s.mom_growth_percent !== null ? `${s.mom_growth_percent > 0 ? '+' : ''}${s.mom_growth_percent}%` : '—'}
                     </td>
+                    <td className="font-semibold text-saffron-400">{s.current_month_units}</td>
                     <td>
                       {s.is_slow_moving
                         ? <span className="badge-understock">Slow Moving</span>

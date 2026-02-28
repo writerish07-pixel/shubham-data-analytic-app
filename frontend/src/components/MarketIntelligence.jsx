@@ -53,6 +53,12 @@ function MarketCard({ item }) {
       </div>
       <h3 className="font-semibold text-brand-text text-sm leading-snug mb-2">{item.title}</h3>
       <p className="text-xs text-brand-muted leading-relaxed">{item.summary}</p>
+      {item.action && (
+        <div className="mt-2 px-2.5 py-2 rounded-lg bg-saffron-500/5 border border-saffron-500/20">
+          <p className="text-[10px] text-saffron-400 font-semibold uppercase tracking-wider mb-0.5">Action</p>
+          <p className="text-xs text-saffron-300">{item.action}</p>
+        </div>
+      )}
       <ImpactBar score={item.impact_score || 0} />
       <div className="mt-3 flex items-center justify-between">
         <span className="text-xs text-brand-muted">Source: {item.source}</span>

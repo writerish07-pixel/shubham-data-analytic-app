@@ -12,6 +12,7 @@ from models import HeroSalesData
 from services.sales_analytics import (
     get_yoy_analysis, get_mom_analysis, get_sku_performance,
     get_colour_analysis, get_seasonal_patterns, get_dashboard_summary,
+    get_location_analysis, get_data_info,
 )
 
 router = APIRouter()
@@ -130,6 +131,18 @@ def colour_analysis(db: Session = Depends(get_db)):
 @router.get("/seasonal-patterns")
 def seasonal_patterns(db: Session = Depends(get_db)):
     return get_seasonal_patterns(db)
+
+
+@router.get("/data-info")
+def data_info(db: Session = Depends(get_db)):
+    """Return metadata about the currently loaded sales data — date range, record count, years available."""
+    return get_data_info(db)
+
+
+@router.get("/location-analysis")
+def location_analysis(db: Session = Depends(get_db)):
+    """Sales breakdown by location (city/dealer) and region."""
+    return get_location_analysis(db)
 
 
 @router.get("/upload/template")

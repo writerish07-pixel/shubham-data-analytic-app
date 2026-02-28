@@ -13,6 +13,8 @@ export const getTopPerformers = (limit=10)   => api.get('/api/sales/top-performe
 export const getSlowMovers    = ()           => api.get('/api/sales/slow-movers').then(r => r.data)
 export const getColourAnalysis= ()           => api.get('/api/sales/colour-analysis').then(r => r.data)
 export const getSeasonalPatterns = ()        => api.get('/api/sales/seasonal-patterns').then(r => r.data)
+export const getDataInfo         = ()        => api.get('/api/sales/data-info').then(r => r.data)
+export const getLocationAnalysis = ()        => api.get('/api/sales/location-analysis').then(r => r.data)
 
 // ─── Forecast ────────────────────────────────────────────────────────────────
 export const getForecastSummary = (days=60) => api.get('/api/forecast/summary', { params: { horizon_days: days } }).then(r => r.data)
@@ -26,7 +28,9 @@ export const getWorkingCapital  = ()        => api.get('/api/dispatch/working-ca
 export const getRiskScores      = ()        => api.get('/api/dispatch/risk-scores').then(r => r.data)
 
 // ─── Festivals ───────────────────────────────────────────────────────────────
-export const getUpcomingFestivals = (days=90) => api.get('/api/festivals/upcoming', { params: { days_ahead: days } }).then(r => r.data)
+export const getUpcomingFestivals  = (days=90) => api.get('/api/festivals/upcoming', { params: { days_ahead: days } }).then(r => r.data)
+export const getMarriageMuhurats   = (days=90) => api.get('/api/festivals/marriage-muhurats', { params: { days_ahead: days } }).then(r => r.data)
+export const getMarketSentiment    = ()         => api.get('/api/market/sentiment').then(r => r.data)
 export const getFullCalendar       = ()        => api.get('/api/festivals/calendar').then(r => r.data)
 export const getFestivalImpact     = (name)    => api.get(`/api/festivals/impact/${encodeURIComponent(name)}`).then(r => r.data)
 export const getMarriageSeason     = ()        => api.get('/api/festivals/marriage-season').then(r => r.data)

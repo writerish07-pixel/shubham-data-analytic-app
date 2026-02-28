@@ -2,30 +2,32 @@ import React, { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, TrendingUp, Truck, CalendarDays,
-  MessageSquare, Bell, Globe, Menu, X, Bike, UploadCloud
+  MessageSquare, Bell, Globe, Menu, X, Bike, UploadCloud, MapPin
 } from 'lucide-react'
 
-import Dashboard         from './components/Dashboard'
-import SalesAnalytics    from './components/SalesAnalytics'
-import ForecastView      from './components/ForecastView'
-import DispatchPlanner   from './components/DispatchPlanner'
-import FestivalCalendar  from './components/FestivalCalendar'
-import AICopilot         from './components/AICopilot'
-import Alerts            from './components/Alerts'
+import Dashboard          from './components/Dashboard'
+import SalesAnalytics     from './components/SalesAnalytics'
+import ForecastView       from './components/ForecastView'
+import DispatchPlanner    from './components/DispatchPlanner'
+import FestivalCalendar   from './components/FestivalCalendar'
+import AICopilot          from './components/AICopilot'
+import Alerts             from './components/Alerts'
 import MarketIntelligence from './components/MarketIntelligence'
-import UploadData from './components/UploadData'
+import UploadData         from './components/UploadData'
+import LocationAnalytics  from './components/LocationAnalytics'
 import { getAlertCount } from './services/api'
 
 const NAV_ITEMS = [
   { path: '/',           label: 'Dashboard',          icon: LayoutDashboard },
   { path: '/sales',      label: 'Sales Analytics',    icon: TrendingUp },
+  { path: '/location',   label: 'Location Analytics', icon: MapPin },
   { path: '/forecast',   label: 'Forecast',           icon: TrendingUp },
   { path: '/dispatch',   label: 'Dispatch Planner',   icon: Truck },
   { path: '/festivals',  label: 'Festival Calendar',  icon: CalendarDays },
   { path: '/alerts',     label: 'Smart Alerts',       icon: Bell },
   { path: '/market',     label: 'Market Intel',       icon: Globe },
   { path: '/copilot',    label: 'AI Copilot',         icon: MessageSquare },
-  { path: '/upload',    label: 'Upload Data',        icon: UploadCloud },
+  { path: '/upload',     label: 'Upload Data',        icon: UploadCloud },
 ]
 
 function Sidebar({ open, onClose, alertCount }) {
@@ -142,6 +144,7 @@ export default function App() {
         <Routes>
           <Route path="/"          element={<Dashboard />} />
           <Route path="/sales"     element={<SalesAnalytics />} />
+          <Route path="/location"  element={<LocationAnalytics />} />
           <Route path="/forecast"  element={<ForecastView />} />
           <Route path="/dispatch"  element={<DispatchPlanner />} />
           <Route path="/festivals" element={<FestivalCalendar />} />
