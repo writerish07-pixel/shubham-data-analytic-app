@@ -1,7 +1,12 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { AlertTriangle, TrendingDown, CheckCircle, IndianRupee, Download, Package, Info } from 'lucide-react'
-import { getDispatchRecs, getWorkingCapital, getDispatchExportUrl } from '../services/api'
+import { AlertTriangle, TrendingDown, CheckCircle, IndianRupee, Download, Package, Info, Target, Calendar } from 'lucide-react'
+import { getDispatchRecs, getWorkingCapital, getDispatchExportUrl, getTargetBasedDispatch, getTargetDispatchExportUrl } from '../services/api'
+
+const MONTH_NAMES = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December'
+]
 
 function RiskBadge({ type }) {
   if (type === 'understock') return <span className="badge-understock">⚠ Understock</span>
@@ -25,14 +30,27 @@ function RiskBar({ score }) {
 }
 
 export default function DispatchPlanner() {
-  const [recs, setRecs] = useState([])
-  const [wc, setWc] = useState(null)
+  const now = new Date()
+  // Default planning target = next month
+  const nextMonth = now.getMonth() === 11 ? 1 : now.getMonth() + 2
+  const nextYear  = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear()
+
+  const [tab, setTab]           = useState('target')  // 'target' | 'forecast'
+  const [recs, setRecs]         = useState([])
+  const [wc, setWc]             = useState(null)
   const [leadTime, setLeadTime] = useState(21)
-  const [filter, setFilter] = useState('all')
-  const [loading, setLoading] = useState(true)
+  const [filter, setFilter]     = useState('all')
+  const [loading, setLoading]   = useState(true)
   const [stockSource, setStockSource] = useState(null)
 
-  const load = () => {
+  // Target-based state
+  const [tYear, setTYear]       = useState(nextYear)
+  const [tMonth, setTMonth]     = useState(nextMonth)
+  const [tPlan, setTPlan]       = useState(null)
+  const [tFilter, setTFilter]   = useState('all')
+  const [tLoading, setTLoading] = useState(true)
+
+  const loadForecast = useCallback(() => {
     setLoading(true)
     Promise.all([getDispatchRecs(leadTime), getWorkingCapital()])
       .then(([r, w]) => {
@@ -42,23 +60,241 @@ export default function DispatchPlanner() {
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }
+  }, [leadTime])
 
-  useEffect(() => { load() }, [leadTime])
+  const loadTargetPlan = useCallback(() => {
+    setTLoading(true)
+    getTargetBasedDispatch(tYear, tMonth)
+      .then(setTPlan)
+      .catch(console.error)
+      .finally(() => setTLoading(false))
+  }, [tYear, tMonth])
 
-  const filtered = filter === 'all' ? recs : recs.filter(r => r.risk_type === filter)
+  useEffect(() => { if (tab === 'forecast') loadForecast() }, [tab, loadForecast])
+  useEffect(() => { if (tab === 'target')   loadTargetPlan() }, [tab, loadTargetPlan])
+
+  const filtered  = filter === 'all'  ? recs  : recs.filter(r => r.risk_type === filter)
+  const tFiltered = tFilter === 'all' ? (tPlan?.model_plans || []) : (tPlan?.model_plans || []).filter(p => p.risk_type === tFilter)
 
   const fmt = n => n >= 10000000 ? `₹${(n / 10000000).toFixed(1)}Cr` :
                    n >= 100000  ? `₹${(n / 100000).toFixed(1)}L` : `₹${n?.toLocaleString('en-IN')}`
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="animate-spin w-8 h-8 border-2 border-saffron-500 border-t-transparent rounded-full" />
-    </div>
-  )
+  const currentYear = now.getFullYear()
+  const years = [currentYear, currentYear + 1]
 
   return (
     <div className="space-y-6">
+
+      {/* Mode tabs */}
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => setTab('target')}
+          className={`flex items-center gap-2 text-sm px-4 py-2 rounded-lg border transition-all ${
+            tab === 'target' ? 'bg-saffron-500/20 text-saffron-400 border-saffron-500/30' : 'text-brand-muted border-brand-border hover:text-brand-text'
+          }`}>
+          <Target size={15} /> Target-Based Plan
+        </button>
+        <button onClick={() => setTab('forecast')}
+          className={`flex items-center gap-2 text-sm px-4 py-2 rounded-lg border transition-all ${
+            tab === 'forecast' ? 'bg-saffron-500/20 text-saffron-400 border-saffron-500/30' : 'text-brand-muted border-brand-border hover:text-brand-text'
+          }`}>
+          <TrendingDown size={15} /> Forecast-Based Plan
+        </button>
+        <div className="ml-auto text-xs text-brand-muted self-center hidden sm:block">
+          <Info size={12} className="inline mr-1" />
+          Target-based is recommended when you have monthly targets set
+        </div>
+      </div>
+
+      {/* ── TARGET-BASED PLAN ────────────────────────────────────────────────── */}
+      {tab === 'target' && (
+        <>
+          {/* Month selector */}
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Calendar size={15} className="text-saffron-400" />
+              <span className="text-sm text-brand-muted">Planning for:</span>
+              <select value={tYear} onChange={e => setTYear(+e.target.value)}
+                className="bg-brand-card border border-brand-border text-brand-text text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-saffron-500">
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <select value={tMonth} onChange={e => setTMonth(+e.target.value)}
+                className="bg-brand-card border border-brand-border text-brand-text text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-saffron-500">
+                {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+              </select>
+            </div>
+            <button
+              onClick={() => { setTYear(nextYear); setTMonth(nextMonth) }}
+              className="text-xs text-saffron-400 border border-saffron-500/30 rounded-lg px-3 py-2 hover:bg-saffron-500/10 transition-colors"
+            >
+              Next Month →
+            </button>
+          </div>
+
+          {tLoading ? (
+            <div className="flex items-center justify-center h-40">
+              <div className="animate-spin w-8 h-8 border-2 border-saffron-500 border-t-transparent rounded-full" />
+            </div>
+          ) : tPlan ? (
+            <>
+              {/* Target plan info banner */}
+              <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-xs ${
+                tPlan.stock_source === 'uploaded'
+                  ? 'bg-green-500/10 border-green-500/30 text-green-300'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+              }`}>
+                <Package size={14} className="mt-0.5 shrink-0" />
+                <div>
+                  <span className="font-semibold">
+                    {tPlan.stock_source === 'uploaded' ? 'Using your uploaded stock inventory. ' : 'Stock estimated from sales history. '}
+                  </span>
+                  Plan for <strong>{tPlan.target_month} {tPlan.target_year}</strong> •{' '}
+                  Overall target: <strong>{tPlan.overall_target?.toLocaleString('en-IN')} units</strong>
+                  {tPlan.festival_boost > 1.05 && (
+                    <span className="text-amber-400 ml-2">• Festival boost +{Math.round((tPlan.festival_boost - 1) * 100)}%</span>
+                  )}
+                  {!tPlan.has_model_targets && (
+                    <span className="text-brand-muted ml-2">• Quantities auto-distributed by sales mix (set model targets for exact split)</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Festival notice */}
+              {tPlan.festivals_this_month?.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {tPlan.festivals_this_month.map((f, i) => (
+                    <span key={i} className="text-xs bg-saffron-500/10 text-saffron-400 border border-saffron-500/20 rounded-full px-3 py-1">
+                      {f.name} · {f.date} · +{f.impact_pct}% demand
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Summary KPIs */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { label: 'Total Order Quantity', value: tPlan.summary?.total_order_quantity?.toLocaleString('en-IN'), color: 'saffron' },
+                  { label: 'Current Stock (Total)', value: tPlan.summary?.total_current_stock?.toLocaleString('en-IN'), color: 'blue' },
+                  { label: 'Models at Risk',  value: tPlan.summary?.models_at_risk,  color: 'red' },
+                  { label: 'Models OK',       value: tPlan.summary?.models_ok,       color: 'green' },
+                ].map((k, i) => (
+                  <div key={i} className="card">
+                    <p className="text-xs text-brand-muted mb-1">{k.label}</p>
+                    <p className={`text-2xl font-bold ${
+                      k.color === 'red' ? 'text-red-400' : k.color === 'green' ? 'text-green-400' :
+                      k.color === 'blue' ? 'text-blue-400' : 'text-saffron-400'
+                    }`}>{k.value ?? '—'}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Filter + export */}
+              <div className="flex flex-wrap items-center gap-3">
+                {['all', 'understock', 'overstock', 'neutral'].map(f => (
+                  <button key={f} onClick={() => setTFilter(f)}
+                    className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                      tFilter === f ? 'bg-saffron-500/20 text-saffron-400 border-saffron-500/30' :
+                                      'text-brand-muted border-brand-border hover:text-brand-text'
+                    }`}>
+                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                    {f !== 'all' && <span className="ml-1 text-brand-muted">({(tPlan.model_plans || []).filter(p => p.risk_type === f).length})</span>}
+                  </button>
+                ))}
+                <a
+                  href={getTargetDispatchExportUrl(tYear, tMonth)}
+                  download
+                  className="ml-auto flex items-center gap-2 text-xs bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 px-4 py-2 rounded-lg transition font-medium"
+                >
+                  <Download size={13} /> Export Plan (CSV)
+                </a>
+              </div>
+
+              {/* Target plan table */}
+              <div className="card">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-sm font-semibold text-brand-text">
+                    Dispatch Order Plan — {tPlan.target_month} {tPlan.target_year}
+                  </h2>
+                  {tPlan.has_model_targets && (
+                    <span className="text-[10px] bg-saffron-500/10 text-saffron-400 border border-saffron-500/20 px-2 py-1 rounded-full">
+                      Using your model targets
+                    </span>
+                  )}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Model</th>
+                        <th title="Units you need to sell this month">Monthly Target</th>
+                        <th title="Already sold this month">Sold</th>
+                        <th title="What's still needed">Remaining</th>
+                        <th title="Current stock on hand">Stock on Hand</th>
+                        <th title="Target × festival boost factor">Festival Adj.</th>
+                        <th title="15% safety buffer">Buffer</th>
+                        <th className="text-saffron-400" title="Units to order from company">Order Qty</th>
+                        <th>Daily Sales</th>
+                        <th>Risk</th>
+                        <th>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tFiltered.map((r, i) => (
+                        <tr key={i}>
+                          <td className="font-medium text-brand-text">{r.model_name}</td>
+                          <td>{r.monthly_target?.toLocaleString('en-IN')}</td>
+                          <td className="text-green-400">{r.already_sold?.toLocaleString('en-IN') || 0}</td>
+                          <td className="font-semibold">{r.remaining_target?.toLocaleString('en-IN')}</td>
+                          <td className={r.stock_source === 'uploaded' ? 'text-green-400' : 'text-amber-400'}>
+                            {r.current_stock?.toLocaleString('en-IN')}
+                            <span className="text-[9px] text-brand-muted ml-1">
+                              {r.stock_source === 'uploaded' ? '(real)' : '(est.)'}
+                            </span>
+                          </td>
+                          <td className="text-brand-muted">{r.festival_adjusted?.toLocaleString('en-IN')}</td>
+                          <td className="text-brand-muted">{r.buffer_stock?.toLocaleString('en-IN')}</td>
+                          <td className="font-bold text-saffron-400 text-base">{r.order_quantity?.toLocaleString('en-IN')}</td>
+                          <td className="text-brand-muted">{r.daily_velocity}/day</td>
+                          <td><RiskBadge type={r.risk_type} /></td>
+                          <td className="text-xs text-brand-muted max-w-[180px]">{r.notes}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-brand-border font-semibold">
+                        <td className="text-brand-text pt-3">Total</td>
+                        <td className="pt-3">{tFiltered.reduce((s, r) => s + (r.monthly_target || 0), 0).toLocaleString('en-IN')}</td>
+                        <td className="text-green-400 pt-3">{tFiltered.reduce((s, r) => s + (r.already_sold || 0), 0).toLocaleString('en-IN')}</td>
+                        <td className="pt-3">{tFiltered.reduce((s, r) => s + (r.remaining_target || 0), 0).toLocaleString('en-IN')}</td>
+                        <td className="pt-3">{tFiltered.reduce((s, r) => s + (r.current_stock || 0), 0).toLocaleString('en-IN')}</td>
+                        <td colSpan={2}></td>
+                        <td className="text-saffron-400 font-bold text-base pt-3">
+                          {tFiltered.reduce((s, r) => s + (r.order_quantity || 0), 0).toLocaleString('en-IN')}
+                        </td>
+                        <td colSpan={3}></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="card text-center py-10">
+              <Target size={28} className="text-brand-muted mx-auto mb-2" />
+              <p className="text-brand-muted">Could not load target plan. Check that sales data is uploaded.</p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── FORECAST-BASED PLAN ──────────────────────────────────────────────── */}
+      {tab === 'forecast' && (
+        <>
+          {loading ? (
+            <div className="flex items-center justify-center h-40">
+              <div className="animate-spin w-8 h-8 border-2 border-saffron-500 border-t-transparent rounded-full" />
+            </div>
+          ) : (
+            <>
       {/* Stock source notice */}
       {stockSource && (
         <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-xs ${
@@ -234,6 +470,10 @@ export default function DispatchPlanner() {
           </div>
         )}
       </div>
+            </>
+          )}
+        </>
+      )}
     </div>
   )
 }

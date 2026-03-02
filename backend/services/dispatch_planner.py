@@ -161,6 +161,296 @@ def generate_dispatch_recommendations(
     return sorted(recommendations, key=lambda x: x["risk_score"], reverse=True)
 
 
+# ─── Target-based dispatch ────────────────────────────────────────────────────
+
+_MONTH_NAMES = [
+    'January','February','March','April','May','June',
+    'July','August','September','October','November','December'
+]
+
+
+def _model_stock_map(db: Session) -> Dict[str, int]:
+    """Return total current stock aggregated by model_name from uploaded inventory."""
+    items = db.query(StockInventory).all()
+    stock: Dict[str, int] = {}
+    for item in items:
+        name = (item.model_name or item.sku_code or "").strip()
+        if name:
+            stock[name] = stock.get(name, 0) + item.current_stock
+    return stock
+
+
+def _find_model_stock(model_stock: Dict[str, int], model_name: str) -> int:
+    """Match model to stock with exact then partial name matching."""
+    if model_name in model_stock:
+        return model_stock[model_name]
+    low = model_name.lower()
+    total = 0
+    for k, v in model_stock.items():
+        if low in k.lower() or k.lower() in low:
+            total += v
+    return total
+
+
+def _model_velocity(df: pd.DataFrame, model_name: str, days: int = 30) -> float:
+    """Daily sales velocity for a model over the last N days of data."""
+    if df.empty:
+        return 0.0
+    latest = df["invoice_date"].max()
+    cutoff = latest - pd.Timedelta(days=days)
+    recent = df[(df["invoice_date"] >= cutoff) & (df["model_name"] == model_name)]
+    return float(recent["quantity_sold"].sum()) / max(1, days)
+
+
+def _dispatch_notes(risk_type: str, festival_boost: float, festivals: list) -> str:
+    parts = []
+    if festival_boost > 1.05:
+        names = ", ".join(f["name"] for f in festivals[:2])
+        parts.append(f"Festival boost +{round((festival_boost - 1) * 100)}% ({names})")
+    if risk_type == "understock":
+        parts.append("⚠️ Low stock — order urgently")
+    elif risk_type == "overstock":
+        parts.append("📦 Sufficient stock — verify before ordering")
+    return " | ".join(parts) if parts else "Normal order"
+
+
+def generate_target_based_dispatch(db: Session, year: int, month: int) -> Dict[str, Any]:
+    """
+    Dispatch plan driven by monthly sales target, not historical forecast.
+
+    For each model:
+      order_qty = max(0, festival_adjusted_remaining - current_stock + 15% buffer)
+
+    If model-wise targets are set → uses them directly.
+    Otherwise distributes the overall target by 3-month historical sales mix.
+    """
+    import calendar as _cal
+    from services.target_engine import get_targets_for_month, compute_auto_target
+
+    # 1. Targets
+    tdata        = get_targets_for_month(db, year, month)
+    overall_data = tdata.get("overall") or {}
+    model_targets = tdata.get("model_targets") or []
+    has_model_targets = tdata.get("has_model_targets", False)
+
+    overall_units = overall_data.get("target_units") or 0
+    is_manual     = overall_data.get("is_manual", False)
+    if not overall_units:
+        auto = compute_auto_target(db, year, month)
+        overall_units = auto.get("target_units", 0)
+        is_manual = False
+
+    # 2. Festivals in target month
+    month_start     = date(year, month, 1)
+    days_in_month   = _cal.monthrange(year, month)[1]
+    month_festivals = get_upcoming_festivals(from_date=month_start, days_ahead=days_in_month)
+    festival_boost  = max([1.0] + [1.0 + f["impact_pct"] / 100 for f in month_festivals])
+
+    # 3. Stock data
+    model_stock  = _model_stock_map(db)
+    stock_source = "uploaded" if db.query(StockInventory).first() else "estimated"
+    df           = _sales_df(db)
+
+    plans = []
+
+    if has_model_targets and model_targets:
+        for mt in model_targets:
+            name      = mt["model_name"]
+            target    = mt["target_units"]
+            sold      = mt.get("actuals_so_far", 0)
+            remaining = mt.get("remaining", target)
+
+            curr   = _find_model_stock(model_stock, name)
+            adj    = int(np.ceil(remaining * festival_boost))
+            buffer = int(np.ceil(adj * BUFFER_PCT))
+            order  = max(0, adj - curr + buffer)
+
+            risk, rtype = _risk_score(adj, curr, DEFAULT_LEAD_TIME, festival_boost)
+
+            plans.append({
+                "model_name":        name,
+                "monthly_target":    target,
+                "already_sold":      sold,
+                "remaining_target":  remaining,
+                "current_stock":     curr,
+                "stock_source":      stock_source,
+                "daily_velocity":    round(_model_velocity(df, name), 1),
+                "festival_adjusted": adj,
+                "buffer_stock":      buffer,
+                "order_quantity":    order,
+                "risk_score":        round(risk, 3),
+                "risk_type":         rtype,
+                "festival_factor":   round(festival_boost, 2),
+                "notes":             _dispatch_notes(rtype, festival_boost, month_festivals),
+                "source":            "model_target",
+            })
+
+    elif not df.empty and overall_units > 0:
+        # Distribute by 3-month mix
+        latest  = df["invoice_date"].max()
+        cutoff  = latest - pd.Timedelta(days=90)
+        recent  = df[df["invoice_date"] >= cutoff]
+        mix     = recent.groupby("model_name")["quantity_sold"].sum()
+        total_m = float(mix.sum())
+
+        for name, mu in mix.sort_values(ascending=False).items():
+            share  = float(mu) / total_m if total_m > 0 else 0
+            target = max(1, int(round(overall_units * share)))
+
+            curr   = _find_model_stock(model_stock, name)
+            adj    = int(np.ceil(target * festival_boost))
+            buffer = int(np.ceil(adj * BUFFER_PCT))
+            order  = max(0, adj - curr + buffer)
+
+            risk, rtype = _risk_score(adj, curr, DEFAULT_LEAD_TIME, festival_boost)
+
+            plans.append({
+                "model_name":        name,
+                "monthly_target":    target,
+                "already_sold":      0,
+                "remaining_target":  target,
+                "current_stock":     curr,
+                "stock_source":      stock_source,
+                "daily_velocity":    round(_model_velocity(df, name), 1),
+                "festival_adjusted": adj,
+                "buffer_stock":      buffer,
+                "order_quantity":    order,
+                "risk_score":        round(risk, 3),
+                "risk_type":         rtype,
+                "festival_factor":   round(festival_boost, 2),
+                "mix_pct":           round(share * 100, 1),
+                "notes":             _dispatch_notes(rtype, festival_boost, month_festivals),
+                "source":            "auto_distributed",
+            })
+        plans.sort(key=lambda x: x["risk_score"], reverse=True)
+
+    return {
+        "target_month":       _MONTH_NAMES[month - 1],
+        "target_year":        year,
+        "overall_target":     overall_units,
+        "is_manual_target":   is_manual,
+        "has_model_targets":  has_model_targets,
+        "stock_source":       stock_source,
+        "festival_boost":     round(festival_boost, 2),
+        "festivals_this_month": [
+            {"name": f["name"], "date": str(f["date"]), "impact_pct": f["impact_pct"]}
+            for f in month_festivals
+        ],
+        "model_plans": plans,
+        "summary": {
+            "total_order_quantity":  sum(p["order_quantity"] for p in plans),
+            "total_current_stock":   sum(p["current_stock"] for p in plans),
+            "models_at_risk":        len([p for p in plans if p["risk_type"] == "understock"]),
+            "models_overstocked":    len([p for p in plans if p["risk_type"] == "overstock"]),
+            "models_ok":             len([p for p in plans if p["risk_type"] == "neutral"]),
+        },
+    }
+
+
+def stock_health_analysis(db: Session, year: int, month: int) -> Dict[str, Any]:
+    """
+    Compare current stock vs what is needed for the given month's target.
+    Returns model-wise health status: critical / low / ok / excess.
+    """
+    from services.target_engine import get_targets_for_month, compute_auto_target
+
+    tdata         = get_targets_for_month(db, year, month)
+    overall_data  = tdata.get("overall") or {}
+    model_targets = tdata.get("model_targets") or []
+    has_model_targets = tdata.get("has_model_targets", False)
+
+    overall_units = overall_data.get("target_units") or 0
+    if not overall_units:
+        auto = compute_auto_target(db, year, month)
+        overall_units = auto.get("target_units", 0)
+
+    model_stock  = _model_stock_map(db)
+    df           = _sales_df(db)
+    stock_source = "uploaded" if db.query(StockInventory).first() else "no_stock_uploaded"
+
+    def _status(curr: int, needed: int) -> str:
+        if needed == 0:
+            return "ok"
+        r = curr / needed
+        if r >= 1.2:   return "excess"
+        if r >= 0.8:   return "ok"
+        if r >= 0.4:   return "low"
+        return "critical"
+
+    items = []
+
+    if has_model_targets and model_targets:
+        for mt in model_targets:
+            name      = mt["model_name"]
+            needed    = mt["target_units"]
+            remaining = mt.get("remaining", needed)
+            curr      = _find_model_stock(model_stock, name)
+            vel       = _model_velocity(df, name)
+            days_cov  = int(curr / vel) if vel > 0 else 999
+
+            items.append({
+                "model_name":      name,
+                "current_stock":   curr,
+                "target_needed":   needed,
+                "remaining":       remaining,
+                "coverage_ratio":  round(curr / needed, 2) if needed > 0 else 0,
+                "status":          _status(curr, remaining),
+                "daily_velocity":  round(vel, 1),
+                "days_of_stock":   min(days_cov, 999),
+                "gap":             max(0, remaining - curr),
+                "surplus":         max(0, curr - remaining),
+                "source":          "model_target",
+            })
+
+    elif not df.empty and overall_units > 0:
+        latest  = df["invoice_date"].max()
+        cutoff  = latest - pd.Timedelta(days=90)
+        recent  = df[df["invoice_date"] >= cutoff]
+        mix     = recent.groupby("model_name")["quantity_sold"].sum()
+        total_m = float(mix.sum())
+
+        for name, mu in mix.sort_values(ascending=False).items():
+            share  = float(mu) / total_m if total_m > 0 else 0
+            needed = max(1, int(round(overall_units * share)))
+            curr   = _find_model_stock(model_stock, name)
+            vel    = _model_velocity(df, name)
+            days_cov = int(curr / vel) if vel > 0 else 999
+
+            items.append({
+                "model_name":      name,
+                "current_stock":   curr,
+                "target_needed":   needed,
+                "remaining":       needed,
+                "coverage_ratio":  round(curr / needed, 2) if needed > 0 else 0,
+                "status":          _status(curr, needed),
+                "daily_velocity":  round(vel, 1),
+                "days_of_stock":   min(days_cov, 999),
+                "gap":             max(0, needed - curr),
+                "surplus":         max(0, curr - needed),
+                "source":          "auto_distributed",
+            })
+
+    status_order = {"critical": 0, "low": 1, "ok": 2, "excess": 3}
+    items.sort(key=lambda x: status_order.get(x["status"], 9))
+
+    return {
+        "target_month":    _MONTH_NAMES[month - 1],
+        "target_year":     year,
+        "overall_target":  overall_units,
+        "stock_source":    stock_source,
+        "has_stock_data":  bool(model_stock),
+        "items":           items,
+        "summary": {
+            "total_current_stock":  sum(i["current_stock"] for i in items),
+            "total_target_needed":  sum(i["target_needed"] for i in items),
+            "critical_count":       len([i for i in items if i["status"] == "critical"]),
+            "low_count":            len([i for i in items if i["status"] == "low"]),
+            "ok_count":             len([i for i in items if i["status"] == "ok"]),
+            "excess_count":         len([i for i in items if i["status"] == "excess"]),
+        },
+    }
+
+
 def working_capital_summary(db: Session) -> Dict[str, Any]:
     """Compute overall working capital exposure and dead stock risk."""
     recommendations = generate_dispatch_recommendations(db)

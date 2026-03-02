@@ -79,8 +79,14 @@ export const clearStockData     = () => api.delete('/api/stock/clear').then(r =>
 export const getStockTemplateUrl = () => `${BASE}/api/stock/template`
 
 // ─── Dispatch Export ──────────────────────────────────────────────────────────
-export const getDispatchExportUrl = (leadDays = 21) =>
+export const getDispatchExportUrl        = (leadDays = 21) =>
   `${BASE}/api/dispatch/export?lead_time_days=${leadDays}`
+export const getTargetDispatchExportUrl  = (year, month) =>
+  `${BASE}/api/dispatch/export-target/${year}/${month}`
+export const getTargetBasedDispatch      = (year, month) =>
+  api.get(`/api/dispatch/target-plan/${year}/${month}`).then(r => r.data)
+export const getStockHealth              = (year, month) =>
+  api.get(`/api/dispatch/stock-health/${year}/${month}`).then(r => r.data)
 
 // ─── Sales Targets ────────────────────────────────────────────────────────────
 export const getTargetsForMonth   = (year, month)              => api.get(`/api/targets/month/${year}/${month}`).then(r => r.data)

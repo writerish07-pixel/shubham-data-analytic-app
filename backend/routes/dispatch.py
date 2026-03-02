@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import io
@@ -6,7 +6,10 @@ import csv
 from datetime import date
 
 from database import get_db
-from services.dispatch_planner import generate_dispatch_recommendations, working_capital_summary
+from services.dispatch_planner import (
+    generate_dispatch_recommendations, working_capital_summary,
+    generate_target_based_dispatch, stock_health_analysis,
+)
 
 router = APIRouter()
 
@@ -70,6 +73,73 @@ def export_dispatch_plan(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@router.get("/target-plan/{year}/{month}")
+def target_based_plan(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+):
+    """Target-based dispatch plan — order exactly what you need to hit this month's target."""
+    if not (1 <= month <= 12):
+        raise HTTPException(status_code=400, detail="month must be 1-12")
+    return generate_target_based_dispatch(db, year, month)
+
+
+@router.get("/export-target/{year}/{month}")
+def export_target_plan(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+):
+    """Download target-based dispatch plan as CSV."""
+    if not (1 <= month <= 12):
+        raise HTTPException(status_code=400, detail="month must be 1-12")
+    plan = generate_target_based_dispatch(db, year, month)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Plan Month", "Model", "Monthly Target", "Already Sold", "Remaining Target",
+        "Current Stock", "Stock Source", "Festival Adjusted", "Buffer (15%)",
+        "Order Quantity", "Daily Velocity", "Risk", "Notes",
+    ])
+    for r in plan.get("model_plans", []):
+        writer.writerow([
+            f"{plan['target_month']} {plan['target_year']}",
+            r["model_name"],
+            r["monthly_target"],
+            r.get("already_sold", 0),
+            r["remaining_target"],
+            r["current_stock"],
+            r["stock_source"],
+            r["festival_adjusted"],
+            r["buffer_stock"],
+            r["order_quantity"],
+            r.get("daily_velocity", 0),
+            r["risk_type"],
+            r.get("notes", ""),
+        ])
+    output.seek(0)
+    filename = f"dispatch_{plan['target_month']}_{plan['target_year']}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/stock-health/{year}/{month}")
+def dispatch_stock_health(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+):
+    """Stock health vs monthly target — shows which models need urgent ordering."""
+    if not (1 <= month <= 12):
+        raise HTTPException(status_code=400, detail="month must be 1-12")
+    return stock_health_analysis(db, year, month)
 
 
 @router.get("/risk-scores")

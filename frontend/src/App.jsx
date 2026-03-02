@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, TrendingUp, Truck, CalendarDays,
-  MessageSquare, Bell, Globe, Menu, X, Bike, UploadCloud, MapPin, Target
+  MessageSquare, Bell, Globe, Menu, X, Bike, UploadCloud, MapPin, Target, Package
 } from 'lucide-react'
 
 import Dashboard          from './components/Dashboard'
@@ -16,6 +16,7 @@ import MarketIntelligence from './components/MarketIntelligence'
 import UploadData         from './components/UploadData'
 import LocationAnalytics  from './components/LocationAnalytics'
 import SalesTarget        from './components/SalesTarget'
+import StockInventory     from './components/StockInventory'
 import { getAlertCount } from './services/api'
 
 const NAV_ITEMS = [
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { path: '/sales',      label: 'Sales Analytics',    icon: TrendingUp },
   { path: '/location',   label: 'Location Analytics', icon: MapPin },
   { path: '/targets',    label: 'Sales Targets',      icon: Target },
+  { path: '/stock',      label: 'Stock Health',       icon: Package },
   { path: '/forecast',   label: 'Forecast',           icon: TrendingUp },
   { path: '/dispatch',   label: 'Dispatch Planner',   icon: Truck },
   { path: '/festivals',  label: 'Festival Calendar',  icon: CalendarDays },
@@ -148,6 +150,7 @@ export default function App() {
           <Route path="/sales"     element={<SalesAnalytics />} />
           <Route path="/location"  element={<LocationAnalytics />} />
           <Route path="/targets"   element={<SalesTarget />} />
+          <Route path="/stock"     element={<StockInventory />} />
           <Route path="/forecast"  element={<ForecastView />} />
           <Route path="/dispatch"  element={<DispatchPlanner />} />
           <Route path="/festivals" element={<FestivalCalendar />} />
