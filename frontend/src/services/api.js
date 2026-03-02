@@ -81,3 +81,17 @@ export const getStockTemplateUrl = () => `${BASE}/api/stock/template`
 // ─── Dispatch Export ──────────────────────────────────────────────────────────
 export const getDispatchExportUrl = (leadDays = 21) =>
   `${BASE}/api/dispatch/export?lead_time_days=${leadDays}`
+
+// ─── Sales Targets ────────────────────────────────────────────────────────────
+export const getTargetsForMonth   = (year, month)              => api.get(`/api/targets/month/${year}/${month}`).then(r => r.data)
+export const getTargetPathway     = (year, month)              => api.get(`/api/targets/pathway/${year}/${month}`).then(r => r.data)
+export const getFullYearPlan      = (year)                     => api.get(`/api/targets/year/${year}`).then(r => r.data)
+export const getAutoTargetPreview = (year, month, growthPct=15, model=null) => {
+  const params = { growth_pct: growthPct }
+  if (model) params.model = model
+  return api.get(`/api/targets/auto/${year}/${month}`, { params }).then(r => r.data)
+}
+export const setOverallTarget     = (year, month, body)        => api.post(`/api/targets/overall/${year}/${month}`, body).then(r => r.data)
+export const setModelTarget       = (year, month, body)        => api.post(`/api/targets/model/${year}/${month}`, body).then(r => r.data)
+export const deleteModelTarget    = (year, month, modelName)   => api.delete(`/api/targets/model/${year}/${month}/${encodeURIComponent(modelName)}`).then(r => r.data)
+export const getAllModels          = ()                         => api.get('/api/targets/models').then(r => r.data)

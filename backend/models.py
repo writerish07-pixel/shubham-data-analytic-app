@@ -130,3 +130,24 @@ class MarketIntelligence(Base):
     impact_score = Column(Float, nullable=True)  # -1 to 1
     raw_data = Column(JSON, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class SalesTarget(Base):
+    """
+    Monthly sales targets — auto-computed (15% YoY growth) or manually set.
+    Can be set at overall level or model-wise level.
+    """
+    __tablename__ = "sales_targets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    year = Column(Integer, nullable=False, index=True)
+    month = Column(Integer, nullable=False, index=True)          # 1-12
+    model_name = Column(String(100), nullable=True, index=True)  # NULL = overall target
+    target_units = Column(Integer, nullable=False)
+    target_revenue = Column(Float, nullable=True)
+    growth_pct = Column(Float, nullable=True)          # the % used to set this target
+    basis_units = Column(Integer, nullable=True)       # last year same month units
+    is_manual = Column(Boolean, default=False)         # True = user overrode auto
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
