@@ -367,7 +367,7 @@ def get_dashboard_summary(db: Session) -> Dict[str, Any]:
         "top_sku":            top_sku,
         "top_model":          top_model,
         "top_colour":         top_colour,
-        "forecast_accuracy_pct": 87.4,
+        "forecast_accuracy_pct": _compute_forecast_accuracy(db),
         "monthly_trend":      get_mom_analysis(db, recent_months=12),
         "sku_rankings":       get_sku_performance(db)[:10],
         "ref_year":           latest_year,
@@ -375,6 +375,16 @@ def get_dashboard_summary(db: Session) -> Dict[str, Any]:
         "data_range_end":     str(latest_date),
         "has_price_data":     bool((df["unit_price"]>0).any()),
     }
+
+
+def _compute_forecast_accuracy(db: Session) -> Optional[float]:
+    """Lazy-import forecast accuracy to avoid circular import."""
+    try:
+        from services.forecasting import compute_forecast_accuracy
+        result = compute_forecast_accuracy(db)
+        return result.get("accuracy_pct")
+    except Exception:
+        return None
 
 
 def get_model_monthly_history(db: Session, model_name: str) -> List[Dict]:

@@ -375,6 +375,22 @@ def get_upcoming_marriage_muhurats(from_date: Optional[date] = None, days_ahead:
     return sorted(results, key=lambda x: x["days_away"])
 
 
+def get_marriage_muhurtat_multiplier(target_date: date) -> Tuple[float, Optional[str]]:
+    """
+    Return demand multiplier for marriage muhurtat (auspicious wedding) dates.
+    Uttam muhurats = +25% demand (wedding gifting + personal purchase)
+    Shubh muhurats = +15% demand
+    """
+    year = target_date.year
+    muhurats = MARRIAGE_MUHURTAT_DATES.get(year, [])
+    for m in muhurats:
+        mdate = _parse_date(m["date"])
+        if mdate == target_date:
+            mult = 1.25 if m["quality"] == "Uttam" else 1.15
+            return mult, f"Marriage Muhurtat ({m['quality']}) — {m['nakshatra']} {m['tithi']}"
+    return 1.0, None
+
+
 def get_all_festivals_flat() -> List[Dict]:
     """Return every festival across all years as a flat list."""
     result = []

@@ -39,9 +39,16 @@ def _sales_df(db: Session) -> pd.DataFrame:
     records = db.query(HeroSalesData).all()
     if not records:
         return pd.DataFrame()
-    rows = [{"invoice_date": r.invoice_date, "model_name": r.model_name,
-             "quantity_sold": r.quantity_sold, "unit_price": r.unit_price,
-             "total_value": r.total_value} for r in records]
+    rows = [{
+        "invoice_date":  r.invoice_date,
+        "sku_code":      r.sku_code or "",
+        "model_name":    r.model_name,
+        "variant":       r.variant or "",
+        "colour":        r.colour or "",
+        "quantity_sold": r.quantity_sold,
+        "unit_price":    r.unit_price,
+        "total_value":   r.total_value,
+    } for r in records]
     df = pd.DataFrame(rows)
     df["invoice_date"] = pd.to_datetime(df["invoice_date"])
     df["year"]  = df["invoice_date"].dt.year
