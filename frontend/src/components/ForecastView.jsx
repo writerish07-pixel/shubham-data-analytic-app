@@ -3,6 +3,7 @@ import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine
 } from 'recharts'
+import { Info } from 'lucide-react'
 import { getForecastAll, getForecastSummary, runWhatIf } from '../services/api'
 
 const SCENARIOS = [
@@ -62,6 +63,29 @@ export default function ForecastView() {
 
   return (
     <div className="space-y-6">
+
+      {/* Explanation banner */}
+      <div className="flex items-start gap-3 px-4 py-3 rounded-xl border bg-blue-500/5 border-blue-500/20 text-xs text-blue-300">
+        <Info size={14} className="mt-0.5 shrink-0" />
+        <div className="space-y-1">
+          <p><span className="font-semibold text-blue-200">What this screen shows:</span></p>
+          <p>
+            <span className="font-semibold">Top chart:</span> Day-by-day predicted sales for a selected SKU over the next 60 days.
+            The orange line is the predicted quantity. Blue dashed = upper confidence band (best case). Grey dashed = lower confidence band (worst case).
+            Values are daily — e.g. "3" means 3 units expected that day.
+          </p>
+          <p>
+            <span className="font-semibold">Forecast table:</span> Total units predicted across all SKUs for the next 30 and 60 days.
+            Use <span className="text-amber-300">30-Day Forecast</span> for this month's stock planning.
+            <span className="ml-1 text-amber-300">Festival Impact</span> shows how much upcoming festivals (Akshaya Tritiya, Dussehra etc.) will affect demand.
+            <span className="ml-1 text-amber-300">Peak Day</span> is the single busiest day forecasted — ensure stock is ready before that date.
+          </p>
+          <p>
+            <span className="font-semibold">What-If Simulator:</span> Test "what if Diwali shifts by 10 days?" or "fuel price rises 5%" to see how it impacts your 60-day forecast total.
+          </p>
+        </div>
+      </div>
+
       {/* SKU Forecast Chart */}
       <div className="card">
         <div className="flex flex-wrap items-center gap-3 mb-4">

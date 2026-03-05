@@ -87,6 +87,10 @@ export const getTargetBasedDispatch      = (year, month) =>
   api.get(`/api/dispatch/target-plan/${year}/${month}`).then(r => r.data)
 export const getStockHealth              = (year, month) =>
   api.get(`/api/dispatch/stock-health/${year}/${month}`).then(r => r.data)
+export const getSkuStockPlan             = (year, month) =>
+  api.get(`/api/dispatch/sku-stock-plan/${year}/${month}`).then(r => r.data)
+export const getSkuStockPlanExportUrl    = (year, month) =>
+  `${BASE}/api/dispatch/export-sku-stock-plan/${year}/${month}`
 
 // ─── Sales Targets ────────────────────────────────────────────────────────────
 export const getTargetsForMonth   = (year, month)              => api.get(`/api/targets/month/${year}/${month}`).then(r => r.data)
@@ -101,3 +105,4 @@ export const setOverallTarget     = (year, month, body)        => api.post(`/api
 export const setModelTarget       = (year, month, body)        => api.post(`/api/targets/model/${year}/${month}`, body).then(r => r.data)
 export const deleteModelTarget    = (year, month, modelName)   => api.delete(`/api/targets/model/${year}/${month}/${encodeURIComponent(modelName)}`).then(r => r.data)
 export const getAllModels          = ()                         => api.get('/api/targets/models').then(r => r.data)
+export const getSkuTargets        = (year, month)              => api.get(`/api/targets/sku-targets/${year}/${month}`).then(r => r.data)

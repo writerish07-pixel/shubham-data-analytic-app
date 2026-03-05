@@ -96,9 +96,13 @@ def generate_dispatch_recommendations(
 
     fc_df = pd.DataFrame(forecasts)
     fc_df["forecast_date"] = pd.to_datetime(fc_df["forecast_date"])
+    # Fill NaN in groupby key columns to avoid silent row drops
+    for col in ["sku_code", "model_name", "variant", "colour"]:
+        if col in fc_df.columns:
+            fc_df[col] = fc_df[col].fillna("").astype(str)
 
-    # Coverage window
-    start = pd.Timestamp.today()
+    # Coverage window — use date-only comparison to avoid time-of-day filtering
+    start = pd.Timestamp(date.today())
     end = start + pd.Timedelta(days=coverage_days)
 
     current_stock_map = _sku_current_stock(db)
@@ -343,6 +347,134 @@ def generate_target_based_dispatch(db: Session, year: int, month: int) -> Dict[s
             "models_at_risk":        len([p for p in plans if p["risk_type"] == "understock"]),
             "models_overstocked":    len([p for p in plans if p["risk_type"] == "overstock"]),
             "models_ok":             len([p for p in plans if p["risk_type"] == "neutral"]),
+        },
+    }
+
+
+def generate_sku_stock_plan(db: Session, year: int, month: int) -> Dict[str, Any]:
+    """
+    SKU-level stock order plan based on monthly sales target.
+
+    Formula (per SKU):
+      daily_rate          = sku_target / 30
+      stock_after_sales   = current_stock - sku_target
+      min_buffer_needed   = daily_rate × 30  (30-day minimum buffer)
+      max_buffer_needed   = daily_rate × 45  (45-day recommended buffer)
+      order_qty_min       = max(0, min_buffer_needed - stock_after_sales)
+                          = max(0, 2 × sku_target - current_stock)
+      order_qty_max       = max(0, max_buffer_needed - stock_after_sales)
+                          = max(0, 2.5 × sku_target - current_stock)
+    """
+    import calendar as _cal
+    import math as _math
+    from services.target_engine import get_sku_targets
+
+    # Get SKU-level targets
+    sku_data = get_sku_targets(db, year, month)
+    sku_targets_list = sku_data.get("sku_targets", [])
+    overall_target = sku_data.get("overall_target", 0)
+
+    # Festivals in target month
+    month_start   = date(year, month, 1)
+    days_in_month = _cal.monthrange(year, month)[1]
+    month_festivals = get_upcoming_festivals(from_date=month_start, days_ahead=days_in_month)
+    festival_boost  = max([1.0] + [1.0 + f["impact_pct"] / 100 for f in month_festivals])
+
+    # Get stock from uploaded inventory or estimate from sales
+    stock_items = db.query(StockInventory).all()
+    stock_source = "uploaded" if stock_items else "estimated"
+    sku_stock_map: Dict[str, int] = {}
+    if stock_items:
+        for item in stock_items:
+            sku_stock_map[item.sku_code] = sku_stock_map.get(item.sku_code, 0) + item.current_stock
+    else:
+        # Estimate from recent sales velocity
+        df = _sales_df(db)
+        if not df.empty:
+            if "sku_code" not in df.columns and "colour" in df.columns:
+                df["sku_code"] = df["model_name"] + "_" + df["colour"].fillna("DEFAULT")
+            latest = df["invoice_date"].max()
+            recent = df[df["invoice_date"] >= latest - pd.Timedelta(days=30)]
+            vel = recent.groupby("sku_code")["quantity_sold"].sum()
+            sku_stock_map = {s: max(2, int(u * 1.2)) for s, u in vel.items()}
+
+    plans = []
+    for sku in sku_targets_list:
+        sku_code    = sku["sku_code"]
+        sku_target  = sku["target_units"]
+        current_stk = sku_stock_map.get(sku_code, 0)
+        daily_rate  = round(sku_target / 30, 2)
+
+        # Stock remaining after selling this month's target
+        stock_after_sales = current_stk - sku_target
+
+        # Buffer stock needed to maintain 30 / 45 days of cover after sales
+        min_buffer = sku_target          # daily_rate × 30 = target
+        max_buffer = _math.ceil(sku_target * 1.5)  # daily_rate × 45
+
+        order_min = max(0, min_buffer - stock_after_sales)
+        order_max = max(0, max_buffer - stock_after_sales)
+
+        # Days of stock after selling target
+        days_cover_after = int(stock_after_sales / daily_rate) if daily_rate > 0 and stock_after_sales > 0 else 0
+
+        if stock_after_sales < 0:
+            status = "critical"   # not enough stock to even cover sales target
+            notes  = "⚠️ Current stock insufficient for sales target — order immediately"
+        elif days_cover_after < 30:
+            status = "low"
+            notes  = f"Only {days_cover_after}d stock remains after target sales — order to maintain 30d buffer"
+        elif days_cover_after <= 45:
+            status = "ok"
+            notes  = f"{days_cover_after}d stock buffer after sales — within 30-45d range"
+        else:
+            status = "excess"
+            notes  = f"{days_cover_after}d stock buffer — above 45d; consider reducing order"
+
+        plans.append({
+            "sku_code":          sku_code,
+            "model_name":        sku["model_name"],
+            "colour":            sku["colour"],
+            "monthly_target":    sku_target,
+            "current_stock":     current_stk,
+            "stock_source":      stock_source,
+            "daily_rate":        daily_rate,
+            "stock_after_sales": stock_after_sales,
+            "days_cover_after_sales": days_cover_after,
+            "min_buffer_30d":    min_buffer,
+            "max_buffer_45d":    max_buffer,
+            "order_qty_min":     order_min,
+            "order_qty_max":     order_max,
+            "order_qty":         order_min,   # recommended = 30-day minimum
+            "festival_boost":    round(festival_boost, 2),
+            "status":            status,
+            "notes":             notes,
+        })
+
+    status_order = {"critical": 0, "low": 1, "ok": 2, "excess": 3}
+    plans.sort(key=lambda x: status_order.get(x["status"], 9))
+
+    return {
+        "target_month":    _MONTH_NAMES[month - 1],
+        "target_year":     year,
+        "overall_target":  overall_target,
+        "stock_source":    stock_source,
+        "has_model_targets": sku_data.get("has_model_targets", False),
+        "festival_boost":  round(festival_boost, 2),
+        "festivals_this_month": [
+            {"name": f["name"], "date": str(f["date"]), "impact_pct": f["impact_pct"]}
+            for f in month_festivals
+        ],
+        "sku_plans": plans,
+        "summary": {
+            "total_skus":          len(plans),
+            "total_order_min":     sum(p["order_qty_min"] for p in plans),
+            "total_order_max":     sum(p["order_qty_max"] for p in plans),
+            "total_current_stock": sum(p["current_stock"] for p in plans),
+            "critical_count":      len([p for p in plans if p["status"] == "critical"]),
+            "low_count":           len([p for p in plans if p["status"] == "low"]),
+            "ok_count":            len([p for p in plans if p["status"] == "ok"]),
+            "excess_count":        len([p for p in plans if p["status"] == "excess"]),
         },
     }
 

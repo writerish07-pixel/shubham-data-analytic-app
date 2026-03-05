@@ -19,7 +19,7 @@ from database import get_db
 from services.target_engine import (
     compute_auto_target, save_overall_target, save_model_target,
     get_targets_for_month, get_target_pathway, get_full_year_target_plan,
-    delete_model_target, MIN_GROWTH_PCT,
+    delete_model_target, get_sku_targets, MIN_GROWTH_PCT,
 )
 from services.sales_analytics import get_all_model_names
 
@@ -135,6 +135,14 @@ def remove_model_target(
     """Remove a model-wise target (reverts to auto for that model)."""
     deleted = delete_model_target(db, year, month, model_name)
     return {"status": "deleted" if deleted else "not_found"}
+
+
+@router.get("/sku-targets/{year}/{month}")
+def sku_targets(year: int, month: int, db: Session = Depends(get_db)):
+    """Return SKU-wise targets distributed from model targets by sales mix."""
+    if not (1 <= month <= 12):
+        raise HTTPException(status_code=400, detail="month must be 1-12")
+    return get_sku_targets(db, year, month)
 
 
 @router.get("/models")

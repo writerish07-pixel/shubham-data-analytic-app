@@ -9,6 +9,7 @@ from database import get_db
 from services.dispatch_planner import (
     generate_dispatch_recommendations, working_capital_summary,
     generate_target_based_dispatch, stock_health_analysis,
+    generate_sku_stock_plan,
 )
 
 router = APIRouter()
@@ -123,6 +124,56 @@ def export_target_plan(
         ])
     output.seek(0)
     filename = f"dispatch_{plan['target_month']}_{plan['target_year']}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/sku-stock-plan/{year}/{month}")
+def sku_stock_plan(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+):
+    """SKU-level stock order plan: sales target minus current stock, maintain 30-45 day buffer."""
+    if not (1 <= month <= 12):
+        raise HTTPException(status_code=400, detail="month must be 1-12")
+    return generate_sku_stock_plan(db, year, month)
+
+
+@router.get("/export-sku-stock-plan/{year}/{month}")
+def export_sku_stock_plan(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+):
+    """Download SKU-level stock plan as CSV."""
+    if not (1 <= month <= 12):
+        raise HTTPException(status_code=400, detail="month must be 1-12")
+    plan = generate_sku_stock_plan(db, year, month)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "SKU Code", "Model", "Colour",
+        "Monthly Sales Target", "Current Stock", "Stock Source",
+        "Stock After Sales", "Days Cover After Sales",
+        "30-Day Min Buffer", "45-Day Max Buffer",
+        "Order Qty (Min - 30d)", "Order Qty (Max - 45d)",
+        "Status", "Notes",
+    ])
+    for r in plan.get("sku_plans", []):
+        writer.writerow([
+            r["sku_code"], r["model_name"], r["colour"],
+            r["monthly_target"], r["current_stock"], r["stock_source"],
+            r["stock_after_sales"], r["days_cover_after_sales"],
+            r["min_buffer_30d"], r["max_buffer_45d"],
+            r["order_qty_min"], r["order_qty_max"],
+            r["status"], r["notes"],
+        ])
+    output.seek(0)
+    filename = f"sku_stock_plan_{plan['target_month']}_{plan['target_year']}.csv"
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",

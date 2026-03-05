@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { AlertTriangle, TrendingDown, CheckCircle, IndianRupee, Download, Package, Info, Target, Calendar } from 'lucide-react'
-import { getDispatchRecs, getWorkingCapital, getDispatchExportUrl, getTargetBasedDispatch, getTargetDispatchExportUrl } from '../services/api'
+import { getDispatchRecs, getWorkingCapital, getDispatchExportUrl, getSkuStockPlan, getSkuStockPlanExportUrl } from '../services/api'
 
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
@@ -43,7 +43,7 @@ export default function DispatchPlanner() {
   const [loading, setLoading]   = useState(true)
   const [stockSource, setStockSource] = useState(null)
 
-  // Target-based state
+  // SKU Stock Plan state
   const [tYear, setTYear]       = useState(nextYear)
   const [tMonth, setTMonth]     = useState(nextMonth)
   const [tPlan, setTPlan]       = useState(null)
@@ -64,7 +64,7 @@ export default function DispatchPlanner() {
 
   const loadTargetPlan = useCallback(() => {
     setTLoading(true)
-    getTargetBasedDispatch(tYear, tMonth)
+    getSkuStockPlan(tYear, tMonth)
       .then(setTPlan)
       .catch(console.error)
       .finally(() => setTLoading(false))
@@ -74,7 +74,6 @@ export default function DispatchPlanner() {
   useEffect(() => { if (tab === 'target')   loadTargetPlan() }, [tab, loadTargetPlan])
 
   const filtered  = filter === 'all'  ? recs  : recs.filter(r => r.risk_type === filter)
-  const tFiltered = tFilter === 'all' ? (tPlan?.model_plans || []) : (tPlan?.model_plans || []).filter(p => p.risk_type === tFilter)
 
   const fmt = n => n >= 10000000 ? `₹${(n / 10000000).toFixed(1)}Cr` :
                    n >= 100000  ? `₹${(n / 100000).toFixed(1)}L` : `₹${n?.toLocaleString('en-IN')}`
@@ -91,7 +90,7 @@ export default function DispatchPlanner() {
           className={`flex items-center gap-2 text-sm px-4 py-2 rounded-lg border transition-all ${
             tab === 'target' ? 'bg-saffron-500/20 text-saffron-400 border-saffron-500/30' : 'text-brand-muted border-brand-border hover:text-brand-text'
           }`}>
-          <Target size={15} /> Target-Based Plan
+          <Target size={15} /> Stock Order Plan (SKU-wise)
         </button>
         <button onClick={() => setTab('forecast')}
           className={`flex items-center gap-2 text-sm px-4 py-2 rounded-lg border transition-all ${
@@ -101,11 +100,11 @@ export default function DispatchPlanner() {
         </button>
         <div className="ml-auto text-xs text-brand-muted self-center hidden sm:block">
           <Info size={12} className="inline mr-1" />
-          Target-based is recommended when you have monthly targets set
+          Stock Order Plan tells you exactly what to order to maintain 30-45 days of stock
         </div>
       </div>
 
-      {/* ── TARGET-BASED PLAN ────────────────────────────────────────────────── */}
+      {/* ── SKU STOCK ORDER PLAN ─────────────────────────────────────────────── */}
       {tab === 'target' && (
         <>
           {/* Month selector */}
@@ -130,13 +129,26 @@ export default function DispatchPlanner() {
             </button>
           </div>
 
+          {/* Formula explanation */}
+          <div className="flex items-start gap-3 px-4 py-3 rounded-xl border bg-blue-500/5 border-blue-500/20 text-xs text-blue-300">
+            <Info size={14} className="mt-0.5 shrink-0" />
+            <div>
+              <span className="font-semibold">How Order Qty is calculated (per SKU): </span>
+              Stock After Sales = Current Stock − Sales Target &nbsp;|&nbsp;
+              Order (Min) = 30-day buffer − Stock After Sales &nbsp;|&nbsp;
+              Order (Max) = 45-day buffer − Stock After Sales.
+              <br />
+              Goal: after selling your target, you should still have 30–45 days of stock remaining.
+            </div>
+          </div>
+
           {tLoading ? (
             <div className="flex items-center justify-center h-40">
               <div className="animate-spin w-8 h-8 border-2 border-saffron-500 border-t-transparent rounded-full" />
             </div>
           ) : tPlan ? (
             <>
-              {/* Target plan info banner */}
+              {/* Stock source banner */}
               <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-xs ${
                 tPlan.stock_source === 'uploaded'
                   ? 'bg-green-500/10 border-green-500/30 text-green-300'
@@ -149,11 +161,8 @@ export default function DispatchPlanner() {
                   </span>
                   Plan for <strong>{tPlan.target_month} {tPlan.target_year}</strong> •{' '}
                   Overall target: <strong>{tPlan.overall_target?.toLocaleString('en-IN')} units</strong>
-                  {tPlan.festival_boost > 1.05 && (
-                    <span className="text-amber-400 ml-2">• Festival boost +{Math.round((tPlan.festival_boost - 1) * 100)}%</span>
-                  )}
                   {!tPlan.has_model_targets && (
-                    <span className="text-brand-muted ml-2">• Quantities auto-distributed by sales mix (set model targets for exact split)</span>
+                    <span className="text-amber-400 ml-2">• SKU targets auto-distributed by sales mix (set model targets for exact split)</span>
                   )}
                 </div>
               </div>
@@ -172,10 +181,10 @@ export default function DispatchPlanner() {
               {/* Summary KPIs */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                  { label: 'Total Order Quantity', value: tPlan.summary?.total_order_quantity?.toLocaleString('en-IN'), color: 'saffron' },
-                  { label: 'Current Stock (Total)', value: tPlan.summary?.total_current_stock?.toLocaleString('en-IN'), color: 'blue' },
-                  { label: 'Models at Risk',  value: tPlan.summary?.models_at_risk,  color: 'red' },
-                  { label: 'Models OK',       value: tPlan.summary?.models_ok,       color: 'green' },
+                  { label: 'Order Qty (Min 30d)', value: tPlan.summary?.total_order_min?.toLocaleString('en-IN'), color: 'saffron' },
+                  { label: 'Order Qty (Max 45d)', value: tPlan.summary?.total_order_max?.toLocaleString('en-IN'), color: 'blue' },
+                  { label: 'Critical / Low Stock', value: `${tPlan.summary?.critical_count || 0} / ${tPlan.summary?.low_count || 0}`, color: 'red' },
+                  { label: 'SKUs OK / Excess',     value: `${tPlan.summary?.ok_count || 0} / ${tPlan.summary?.excess_count || 0}`, color: 'green' },
                 ].map((k, i) => (
                   <div key={i} className="card">
                     <p className="text-xs text-brand-muted mb-1">{k.label}</p>
@@ -189,18 +198,28 @@ export default function DispatchPlanner() {
 
               {/* Filter + export */}
               <div className="flex flex-wrap items-center gap-3">
-                {['all', 'understock', 'overstock', 'neutral'].map(f => (
+                {[
+                  ['all', 'All'],
+                  ['critical', 'Critical'],
+                  ['low', 'Low Stock'],
+                  ['ok', 'OK'],
+                  ['excess', 'Excess'],
+                ].map(([f, label]) => (
                   <button key={f} onClick={() => setTFilter(f)}
                     className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
                       tFilter === f ? 'bg-saffron-500/20 text-saffron-400 border-saffron-500/30' :
                                       'text-brand-muted border-brand-border hover:text-brand-text'
                     }`}>
-                    {f.charAt(0).toUpperCase() + f.slice(1)}
-                    {f !== 'all' && <span className="ml-1 text-brand-muted">({(tPlan.model_plans || []).filter(p => p.risk_type === f).length})</span>}
+                    {label}
+                    {f !== 'all' && (
+                      <span className="ml-1 text-brand-muted">
+                        ({(tPlan.sku_plans || []).filter(p => p.status === f).length})
+                      </span>
+                    )}
                   </button>
                 ))}
                 <a
-                  href={getTargetDispatchExportUrl(tYear, tMonth)}
+                  href={getSkuStockPlanExportUrl(tYear, tMonth)}
                   download
                   className="ml-auto flex items-center gap-2 text-xs bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 px-4 py-2 rounded-lg transition font-medium"
                 >
@@ -208,69 +227,88 @@ export default function DispatchPlanner() {
                 </a>
               </div>
 
-              {/* Target plan table */}
+              {/* SKU Stock Order table */}
               <div className="card">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-sm font-semibold text-brand-text">
-                    Dispatch Order Plan — {tPlan.target_month} {tPlan.target_year}
+                    SKU Stock Order Plan — {tPlan.target_month} {tPlan.target_year}
                   </h2>
-                  {tPlan.has_model_targets && (
-                    <span className="text-[10px] bg-saffron-500/10 text-saffron-400 border border-saffron-500/20 px-2 py-1 rounded-full">
-                      Using your model targets
-                    </span>
-                  )}
+                  <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-1 rounded-full">
+                    30–45 day buffer after sales
+                  </span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="data-table">
                     <thead>
                       <tr>
+                        <th>SKU Code</th>
                         <th>Model</th>
-                        <th title="Units you need to sell this month">Monthly Target</th>
-                        <th title="Already sold this month">Sold</th>
-                        <th title="What's still needed">Remaining</th>
-                        <th title="Current stock on hand">Stock on Hand</th>
-                        <th title="Target × festival boost factor">Festival Adj.</th>
-                        <th title="15% safety buffer">Buffer</th>
-                        <th className="text-saffron-400" title="Units to order from company">Order Qty</th>
-                        <th>Daily Sales</th>
-                        <th>Risk</th>
+                        <th>Colour</th>
+                        <th title="Monthly sales target for this SKU">Monthly Target</th>
+                        <th title="Current stock on hand">Current Stock</th>
+                        <th title="Stock remaining after selling monthly target (can be negative)">Stock After Sales</th>
+                        <th title="Days of stock remaining after selling target">Days Cover</th>
+                        <th className="text-amber-400" title="Order qty to maintain minimum 30-day buffer after sales">Order Min (30d)</th>
+                        <th className="text-saffron-400" title="Order qty to maintain recommended 45-day buffer after sales">Order Max (45d)</th>
+                        <th>Status</th>
                         <th>Notes</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {tFiltered.map((r, i) => (
-                        <tr key={i}>
+                      {(tFilter === 'all' ? (tPlan.sku_plans || []) : (tPlan.sku_plans || []).filter(p => p.status === tFilter)).map((r, i) => (
+                        <tr key={i} className={
+                          r.status === 'critical' ? 'bg-red-500/5' :
+                          r.status === 'low' ? 'bg-amber-500/5' : ''
+                        }>
+                          <td className="font-mono text-xs text-saffron-400">{r.sku_code}</td>
                           <td className="font-medium text-brand-text">{r.model_name}</td>
+                          <td className="text-brand-muted">{r.colour}</td>
                           <td>{r.monthly_target?.toLocaleString('en-IN')}</td>
-                          <td className="text-green-400">{r.already_sold?.toLocaleString('en-IN') || 0}</td>
-                          <td className="font-semibold">{r.remaining_target?.toLocaleString('en-IN')}</td>
                           <td className={r.stock_source === 'uploaded' ? 'text-green-400' : 'text-amber-400'}>
                             {r.current_stock?.toLocaleString('en-IN')}
                             <span className="text-[9px] text-brand-muted ml-1">
                               {r.stock_source === 'uploaded' ? '(real)' : '(est.)'}
                             </span>
                           </td>
-                          <td className="text-brand-muted">{r.festival_adjusted?.toLocaleString('en-IN')}</td>
-                          <td className="text-brand-muted">{r.buffer_stock?.toLocaleString('en-IN')}</td>
-                          <td className="font-bold text-saffron-400 text-base">{r.order_quantity?.toLocaleString('en-IN')}</td>
-                          <td className="text-brand-muted">{r.daily_velocity}/day</td>
-                          <td><RiskBadge type={r.risk_type} /></td>
-                          <td className="text-xs text-brand-muted max-w-[180px]">{r.notes}</td>
+                          <td className={r.stock_after_sales < 0 ? 'text-red-400 font-semibold' : 'text-brand-muted'}>
+                            {r.stock_after_sales?.toLocaleString('en-IN')}
+                          </td>
+                          <td className={r.days_cover_after_sales < 30 ? 'text-red-400 font-semibold' : r.days_cover_after_sales <= 45 ? 'text-green-400' : 'text-blue-400'}>
+                            {r.stock_after_sales < 0 ? '—' : `${r.days_cover_after_sales}d`}
+                          </td>
+                          <td className="font-bold text-amber-400">{r.order_qty_min?.toLocaleString('en-IN')}</td>
+                          <td className="font-bold text-saffron-400 text-base">{r.order_qty_max?.toLocaleString('en-IN')}</td>
+                          <td>
+                            {r.status === 'critical' && <span className="text-xs text-red-400 font-semibold">⚠ Critical</span>}
+                            {r.status === 'low'      && <span className="text-xs text-amber-400 font-semibold">↓ Low</span>}
+                            {r.status === 'ok'       && <span className="text-xs text-green-400">✓ OK</span>}
+                            {r.status === 'excess'   && <span className="text-xs text-blue-400">↑ Excess</span>}
+                          </td>
+                          <td className="text-xs text-brand-muted max-w-[200px]">{r.notes}</td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-brand-border font-semibold">
-                        <td className="text-brand-text pt-3">Total</td>
-                        <td className="pt-3">{tFiltered.reduce((s, r) => s + (r.monthly_target || 0), 0).toLocaleString('en-IN')}</td>
-                        <td className="text-green-400 pt-3">{tFiltered.reduce((s, r) => s + (r.already_sold || 0), 0).toLocaleString('en-IN')}</td>
-                        <td className="pt-3">{tFiltered.reduce((s, r) => s + (r.remaining_target || 0), 0).toLocaleString('en-IN')}</td>
-                        <td className="pt-3">{tFiltered.reduce((s, r) => s + (r.current_stock || 0), 0).toLocaleString('en-IN')}</td>
-                        <td colSpan={2}></td>
-                        <td className="text-saffron-400 font-bold text-base pt-3">
-                          {tFiltered.reduce((s, r) => s + (r.order_quantity || 0), 0).toLocaleString('en-IN')}
+                        <td colSpan={3} className="text-brand-text pt-3">Total</td>
+                        <td className="pt-3">
+                          {(tFilter === 'all' ? (tPlan.sku_plans || []) : (tPlan.sku_plans || []).filter(p => p.status === tFilter))
+                            .reduce((s, r) => s + (r.monthly_target || 0), 0).toLocaleString('en-IN')}
                         </td>
-                        <td colSpan={3}></td>
+                        <td className="pt-3">
+                          {(tFilter === 'all' ? (tPlan.sku_plans || []) : (tPlan.sku_plans || []).filter(p => p.status === tFilter))
+                            .reduce((s, r) => s + (r.current_stock || 0), 0).toLocaleString('en-IN')}
+                        </td>
+                        <td colSpan={2}></td>
+                        <td className="text-amber-400 font-bold pt-3">
+                          {(tFilter === 'all' ? (tPlan.sku_plans || []) : (tPlan.sku_plans || []).filter(p => p.status === tFilter))
+                            .reduce((s, r) => s + (r.order_qty_min || 0), 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="text-saffron-400 font-bold text-base pt-3">
+                          {(tFilter === 'all' ? (tPlan.sku_plans || []) : (tPlan.sku_plans || []).filter(p => p.status === tFilter))
+                            .reduce((s, r) => s + (r.order_qty_max || 0), 0).toLocaleString('en-IN')}
+                        </td>
+                        <td colSpan={2}></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -280,7 +318,7 @@ export default function DispatchPlanner() {
           ) : (
             <div className="card text-center py-10">
               <Target size={28} className="text-brand-muted mx-auto mb-2" />
-              <p className="text-brand-muted">Could not load target plan. Check that sales data is uploaded.</p>
+              <p className="text-brand-muted">Could not load stock plan. Check that sales data and targets are set.</p>
             </div>
           )}
         </>

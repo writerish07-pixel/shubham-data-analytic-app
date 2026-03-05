@@ -108,48 +108,43 @@ def compute_auto_target(
 ) -> Dict[str, Any]:
     """
     Compute the recommended target for a given month and optional model.
-    Target = max(
-        last_year_same_month * (1 + growth_pct/100),
-        avg_monthly * seasonal_factor
-    )
-    Always at least MIN_GROWTH_PCT above last year same month.
+    Target = last_year_same_month * (1 + growth_pct/100)
+    If no last-year data exists, falls back to avg_monthly * (1 + growth_pct/100).
     """
     df = _sales_df(db)
     if df.empty:
         return {"target_units": 0, "basis_units": 0, "growth_pct": growth_pct,
-                "method": "no_data", "model": model}
+                "input_growth_pct": growth_pct, "method": "no_data", "model": model}
 
-    ly_units   = _last_year_same_month(df, year, month, model)
-    avg_units  = _avg_monthly_units(df, model)
-    seas_factor= _seasonal_factor_for_month(month)
+    ly_units  = _last_year_same_month(df, year, month, model)
+    avg_units = _avg_monthly_units(df, model)
 
-    # Option A: 15% (or given %) growth over last year
-    target_a = math.ceil(ly_units * (1 + growth_pct / 100)) if ly_units > 0 else 0
-
-    # Option B: seasonal average × 1.15
-    target_b = math.ceil(avg_units * seas_factor * (1 + MIN_GROWTH_PCT/100)) if avg_units > 0 else 0
-
-    # Pick higher of the two
-    target = max(target_a, target_b)
-    if target == 0:
-        # fallback: if no history, use industry average monthly units
-        target = max(10, math.ceil(avg_units * 1.15)) if avg_units > 0 else 10
+    if ly_units > 0:
+        # Apply growth % directly over last year same month
+        target = math.ceil(ly_units * (1 + growth_pct / 100))
+        method = "yoy_growth"
+    elif avg_units > 0:
+        # Fallback: no last-year data, use rolling average
+        target = math.ceil(avg_units * (1 + growth_pct / 100))
+        method = "avg_growth"
+    else:
+        target = 10
+        method = "no_data"
 
     actual_growth = round((target - ly_units) / ly_units * 100, 1) if ly_units > 0 else growth_pct
-    method = "yoy_growth" if target == target_a else "seasonal_adjusted"
 
     return {
-        "year":          year,
-        "month":         month,
-        "month_name":    MONTH_NAMES[month],
-        "model":         model,
-        "target_units":  target,
-        "basis_units":   ly_units,
-        "avg_monthly":   round(avg_units, 1),
-        "growth_pct":    actual_growth,
-        "min_growth_pct":MIN_GROWTH_PCT,
-        "method":        method,
-        "seasonal_factor": seas_factor,
+        "year":             year,
+        "month":            month,
+        "month_name":       MONTH_NAMES[month],
+        "model":            model,
+        "target_units":     target,
+        "basis_units":      ly_units,
+        "avg_monthly":      round(avg_units, 1),
+        "growth_pct":       actual_growth,
+        "input_growth_pct": growth_pct,
+        "min_growth_pct":   MIN_GROWTH_PCT,
+        "method":           method,
     }
 
 
@@ -292,6 +287,92 @@ def get_targets_for_month(db: Session, year: int, month: int) -> Dict[str, Any]:
         "overall": overall_data,
         "model_targets": sorted(model_data, key=lambda x: x["target_units"], reverse=True),
         "has_model_targets": len(models) > 0,
+    }
+
+
+def get_sku_targets(db: Session, year: int, month: int) -> Dict[str, Any]:
+    """
+    Distribute model-level targets down to individual SKUs based on SKU sales mix.
+    Returns a list of SKUs with their allocated target units.
+    """
+    df = _sales_df(db)
+    tdata = get_targets_for_month(db, year, month)
+    overall_target = tdata["overall"].get("target_units", 0) if tdata["overall"] else 0
+    model_targets_map = {m["model_name"]: m["target_units"] for m in tdata["model_targets"]}
+
+    if df.empty:
+        return {"year": year, "month": month, "month_name": MONTH_NAMES[month],
+                "overall_target": overall_target, "sku_targets": [], "has_model_targets": False}
+
+    # Get SKU-level sales mix from last 3 months of data
+    from datetime import date
+    ref = date(year, month, 1)
+    cutoff = pd.Timestamp(ref) - pd.DateOffset(months=3)
+    recent = df[df["invoice_date"] >= cutoff].copy()
+    if recent.empty:
+        recent = df.copy()
+
+    # Ensure sku_code column exists (combine model + colour)
+    if "sku_code" not in recent.columns:
+        if "colour" in recent.columns:
+            recent["sku_code"] = recent["model_name"] + "_" + recent["colour"].fillna("DEFAULT")
+        else:
+            recent["sku_code"] = recent["model_name"]
+
+    if "colour" not in recent.columns:
+        recent["colour"] = "DEFAULT"
+
+    sku_sales = (
+        recent.groupby(["sku_code", "model_name", "colour"])["quantity_sold"]
+        .sum()
+        .reset_index()
+        .rename(columns={"quantity_sold": "sku_sales"})
+    )
+
+    results = []
+    for model_name, model_grp in sku_sales.groupby("model_name"):
+        model_total = model_grp["sku_sales"].sum()
+        # Get this model's target (from model targets or proportional share of overall)
+        if model_name in model_targets_map:
+            model_target = model_targets_map[model_name]
+        elif overall_target > 0:
+            # Distribute overall target by model sales share
+            all_model_sales = sku_sales.groupby("model_name")["sku_sales"].sum()
+            total_all = all_model_sales.sum()
+            model_share = all_model_sales.get(model_name, 0) / total_all if total_all > 0 else 0
+            model_target = round(overall_target * model_share)
+        else:
+            model_target = 0
+
+        for _, row in model_grp.iterrows():
+            sku_share = row["sku_sales"] / model_total if model_total > 0 else 0
+            sku_target = math.ceil(model_target * sku_share) if sku_share > 0 else 0
+            ly_sku = _last_year_same_month(
+                df[(df["model_name"] == row["model_name"])], year, month
+            ) if not df[df["model_name"] == row["model_name"]].empty else 0
+
+            results.append({
+                "sku_code":     row["sku_code"],
+                "model_name":   row["model_name"],
+                "colour":       row["colour"],
+                "sku_sales_3m": int(row["sku_sales"]),
+                "model_target": model_target,
+                "sku_share_pct": round(sku_share * 100, 1),
+                "target_units": sku_target,
+                "daily_target": round(sku_target / 30, 1),
+                "weekly_target": math.ceil(sku_target / 4.3),
+            })
+
+    results.sort(key=lambda x: x["target_units"], reverse=True)
+
+    return {
+        "year":            year,
+        "month":           month,
+        "month_name":      MONTH_NAMES[month],
+        "overall_target":  overall_target,
+        "has_model_targets": tdata["has_model_targets"],
+        "sku_targets":     results,
+        "total_allocated": sum(r["target_units"] for r in results),
     }
 
 

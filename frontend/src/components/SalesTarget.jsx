@@ -6,12 +6,12 @@ import {
 import {
   Target, TrendingUp, TrendingDown, Zap, AlertTriangle,
   CheckCircle, Clock, Edit3, Trash2, Plus, ChevronDown,
-  ChevronUp, Info, Calendar
+  ChevronUp, Info, Calendar, Download, Users,
 } from 'lucide-react'
 import {
   getTargetsForMonth, getTargetPathway, getFullYearPlan,
   getAutoTargetPreview, setOverallTarget, setModelTarget,
-  deleteModelTarget, getAllModels
+  deleteModelTarget, getAllModels, getSkuTargets,
 } from '../services/api'
 
 const MONTH_NAMES = [
@@ -96,6 +96,10 @@ export default function SalesTarget() {
   const [savingModel, setSavingModel]     = useState(false)
   const [deletingModel, setDeletingModel] = useState(null)
 
+  // SKU targets
+  const [skuTargets, setSkuTargets] = useState(null)
+  const [skuLoading, setSkuLoading] = useState(false)
+
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
@@ -125,6 +129,32 @@ export default function SalesTarget() {
   }, [year, month])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Auto-calculate target units when growth % changes (only while in edit mode)
+  useEffect(() => {
+    if (!editOverall) return
+    const gPct = parseFloat(growthInput)
+    if (isNaN(gPct) || gPct < 0) return
+    const timer = setTimeout(() => {
+      getAutoTargetPreview(year, month, gPct)
+        .then(preview => {
+          setAutoPreview(preview)
+          setOverallInput(String(preview.target_units))
+        })
+        .catch(() => {})
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [growthInput, year, month, editOverall])
+
+  // Load SKU targets when switching to SKU tab
+  useEffect(() => {
+    if (tab !== 'sku') return
+    setSkuLoading(true)
+    getSkuTargets(year, month)
+      .then(setSkuTargets)
+      .catch(console.error)
+      .finally(() => setSkuLoading(false))
+  }, [tab, year, month])
 
   const handleMonthChange = (y, m) => { setYear(y); setMonth(m) }
 
@@ -213,6 +243,7 @@ export default function SalesTarget() {
         {[
           ['overview', 'Overview'],
           ['models',   'Model Targets'],
+          ['sku',      'SKU Targets'],
           ['pathway',  'Achievement Pathway'],
           ['annual',   'Annual Plan'],
         ].map(([k, l]) => (
@@ -285,7 +316,7 @@ export default function SalesTarget() {
                 {autoPreview && (
                   <p className="text-xs text-brand-muted mt-0.5">
                     Auto-computed: <span className="text-saffron-400 font-medium">{autoPreview.target_units?.toLocaleString('en-IN')} units</span>
-                    {' '}(basis: {autoPreview.basis_units?.toLocaleString('en-IN')} × {autoPreview.growth_pct}% growth)
+                    {' '}(Last Year Same Month: {autoPreview.basis_units?.toLocaleString('en-IN')} × {autoPreview.input_growth_pct ?? autoPreview.growth_pct}% growth)
                   </p>
                 )}
               </div>
@@ -530,6 +561,127 @@ export default function SalesTarget() {
               You can still override it manually from the Overview tab.
             </span>
           </div>
+        </div>
+      )}
+
+      {/* ══ SKU TARGETS TAB ════════════════════════════════════════════════════ */}
+      {tab === 'sku' && (
+        <div className="space-y-4">
+          {skuLoading ? (
+            <div className="flex items-center justify-center h-40">
+              <div className="animate-spin w-8 h-8 border-2 border-saffron-500 border-t-transparent rounded-full" />
+            </div>
+          ) : (
+            <>
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20 text-xs text-blue-400">
+                <Info size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  SKU targets are distributed from model targets based on each SKU's 3-month sales mix.
+                  Share this list with your sales team for model + colour-wise quotas.
+                  {skuTargets && !skuTargets.has_model_targets && (
+                    <span className="text-amber-400 ml-1">
+                      Set model targets in the "Model Targets" tab for more accurate SKU distribution.
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              {/* Summary + Export */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex gap-4 text-sm">
+                  <span className="text-brand-muted">
+                    Overall Target: <span className="text-saffron-400 font-semibold">{skuTargets?.overall_target?.toLocaleString('en-IN')}</span>
+                  </span>
+                  <span className="text-brand-muted">
+                    Total SKUs: <span className="text-brand-text font-semibold">{skuTargets?.sku_targets?.length || 0}</span>
+                  </span>
+                  <span className="text-brand-muted">
+                    Allocated: <span className="text-green-400 font-semibold">{skuTargets?.total_allocated?.toLocaleString('en-IN')}</span>
+                  </span>
+                </div>
+                {skuTargets?.sku_targets?.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const rows = [
+                        ['#', 'SKU Code', 'Model', 'Colour', 'Target Units', 'Daily Target', 'Weekly Target', '3M Sales Mix %'],
+                        ...skuTargets.sku_targets.map((s, i) => [
+                          i + 1, s.sku_code, s.model_name, s.colour,
+                          s.target_units, s.daily_target, s.weekly_target, s.sku_share_pct,
+                        ]),
+                      ]
+                      const csv = rows.map(r => r.join(',')).join('\n')
+                      const blob = new Blob([csv], { type: 'text/csv' })
+                      const a = document.createElement('a')
+                      a.href = URL.createObjectURL(blob)
+                      a.download = `sku_targets_${MONTH_NAMES[month - 1]}_${year}.csv`
+                      a.click()
+                    }}
+                    className="flex items-center gap-2 text-xs bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 px-4 py-2 rounded-lg transition font-medium"
+                  >
+                    <Download size={13} /> Export for Sales Team (CSV)
+                  </button>
+                )}
+              </div>
+
+              <div className="card">
+                <div className="flex items-center gap-2 mb-4">
+                  <Users size={16} className="text-saffron-400" />
+                  <h2 className="text-sm font-semibold text-brand-text">
+                    SKU-wise Sales Targets — {MONTH_NAMES[month - 1]} {year}
+                  </h2>
+                </div>
+                {!skuTargets?.sku_targets?.length ? (
+                  <div className="text-center py-10">
+                    <Target size={28} className="text-brand-muted mx-auto mb-2" />
+                    <p className="text-brand-muted text-sm">No SKU targets available.</p>
+                    <p className="text-brand-muted text-xs mt-1">
+                      Set an overall or model-wise target first, then come back to see SKU breakdown.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>SKU Code</th>
+                          <th>Model</th>
+                          <th>Colour</th>
+                          <th title="Monthly units to sell">Monthly Target</th>
+                          <th title="Units per day needed">Daily Target</th>
+                          <th title="Units per week needed">Weekly Target</th>
+                          <th title="SKU share of model target based on 3-month sales mix">Sales Mix %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {skuTargets.sku_targets.map((s, i) => (
+                          <tr key={s.sku_code}>
+                            <td className="text-brand-muted">{i + 1}</td>
+                            <td className="font-mono text-xs text-saffron-400">{s.sku_code}</td>
+                            <td className="font-medium text-brand-text">{s.model_name}</td>
+                            <td className="text-brand-muted">{s.colour}</td>
+                            <td className="font-bold text-saffron-400 text-base">{s.target_units?.toLocaleString('en-IN')}</td>
+                            <td className="text-blue-400">{s.daily_target}</td>
+                            <td className="text-green-400">{s.weekly_target}</td>
+                            <td className="text-brand-muted text-xs">{s.sku_share_pct}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-brand-border font-semibold">
+                          <td colSpan={4} className="text-brand-text pt-3">Total</td>
+                          <td className="text-saffron-400 pt-3">
+                            {skuTargets.sku_targets.reduce((s, r) => s + (r.target_units || 0), 0).toLocaleString('en-IN')}
+                          </td>
+                          <td colSpan={3}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 
